@@ -25,7 +25,7 @@ from torch.utils.data import sampler
 
 import torchvision.transforms as T
 
-from sampler import CocoDetection
+from sampler import CocoDetection, sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
 from consts import logdir, stage_names
 

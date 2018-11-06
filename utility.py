@@ -10,8 +10,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from consts import num_classes, id2idx
 
-# %% Utils for bounding boxes
+
+# %% Utils for bounding boxes and others
 
 def IoU(bb1, bb2):
     xa1, ya1, w1, h1 = bb1
@@ -50,6 +52,43 @@ def NMS(lst, sort=False, threshold=0.7):
                 i += 1
     
     return ret
+
+
+def average_precision(lst, targets, threshold=0.5):
+    """
+    Compute the TP and TP+FP for an image and every object class
+    
+    Inputs:
+        - lst: List of predicted (bounding box, confidence, class index)
+          (already sorted because NMS is done before)
+        - targets: Ground-truth of the image
+        - threhold: IoU over which can be considered as a TP
+    Returns:
+        - ToTF: An ndarray of size Cx2, 2 for (TP, TP+FP)
+    """
+    ToTF = np.zeros((num_classes, 2), dtype=np.int32)
+    N = len(targets)
+    det = [1]*N  # denoting whether a ground-truth is *unmatched*
+    for bbox, _, idx in lst:
+        if idx == 0:  # ignore the background class
+            continue
+        t = 0
+        flag = False
+        for i, target in enumerate(targets):  # search through the gt
+            if idx != id2idx[target['category_id']]:
+                continue
+            iou = IoU(bbox, target['bbox'])
+            if iou >= threshold and iou > t:
+                if det[i] == 1:
+                    det[i] = 0  # match the ground-truth
+                    t = iou
+                    flag = True  # found a TP!
+        if flag:
+            ToTF[idx] += 1
+        else:
+            ToTF[idx,1] += 1
+    
+    return ToTF
 
 
 # %% Utils for loss

@@ -13,6 +13,7 @@ import torch.nn as nn
 import torchvision
 
 from consts import num_classes
+#from sampler import sample_anchors, create_proposals, sample_proposals
 
 
 # %% Utility layers
@@ -109,12 +110,12 @@ class FasterRCNN(nn.Module):
         # 2 fc layers of 4096 as the head of Fast R-CNN
         self.RCNN = FastRCNN(
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
-    def forward(self, x, is_training=True):
-        # Extract feature from input x
-        x = self.CNN(x)
-        # Get HxWx9*2 classification scores,
-        # and HxWx9*4 regression coordinates (t_x, t_y, t_w, t_h) for RPN
-        y_cls, y_reg = self.RPN(x)
-        
-        if is_training:
-            pass
+#    def forward(self, x, is_training=True):
+#        # Extract feature from input x
+#        x = self.CNN(x)
+#        # Get HxWx9*2 classification scores,
+#        # and HxWx9*4 regression coordinates (t_x, t_y, t_w, t_h) for RPN
+#        y_cls, y_reg = self.RPN(x)
+#        
+#        if is_training:
+#            pass

@@ -20,7 +20,7 @@ for area in anchor_areas:
 # %% consts that apply to all scripts
 
 logdir = 'result'
-stage_names = ['RPN', 'Fast-R-CNN']
+stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
 num_classes = 80
 num_anchors = 9
 
