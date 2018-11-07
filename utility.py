@@ -6,7 +6,10 @@ Created on Mon Nov  5 14:52:23 2018
 @author: Ruijie Ni
 """
 
+import os
 import numpy as np
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn as nn
 
@@ -110,16 +113,19 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
     Compute the multi-task loss function for an image of RPN
     
     Inputs:
-        - p: The predicted probability of anchor i being an object (size: 2xN)
+        - p: The predicted probability of anchor i being an object (size: ~~2xN~~ 1x18xHxW)
         - p_s: The binary class label of an anchor mentioned before (size: N)
-        (For convenient, I denote positive 1, negative -1, and no-contrib 0)
+          (For convenient, I denote positive 1, negative -1, and no-contrib 0)
         - t: A vector representing the 4 parameterized coordinates
-        of the predicted bounding box (size: 4xN)
+          of the predicted bounding box (size: ~~4xN~~ 1x36xHxW)
         - t_s: That of the ground-truth box associated with a positive anchor (size: 4xN)
         - lbd: The balancing parameter lambda
-    Return:
+    Returns:
         - loss: A scalar tensor of the loss
     """
+    # Outputs of RPN corresponding the anchors
+    p = p.squeeze().view(2, -1)
+    t = t.squeeze().view(4, -1)
     N_cls = 256
     N_reg = p.size[1]
     loss = nn.functional.cross_entropy(p.t(), p_s, reduce=False) / N_cls \
@@ -183,9 +189,10 @@ def inv_parameterize(t, anchor):
     """
     Inputs:
         - t: Parameterized coordinates
-        - anchor: Tensor of size 4xN [(x, y, w, h) for each]
+        - anchor: Tuple of size 4 or 
+          Tensor of size 4xN or 4xHxW [(x, y, w, h) for each]
     Returns:
-        - bbox: Tensor of size 4xN [(x, y, w, h) for each]
+        - bbox: Tuple or Tensor of the same type and size
     """
     if isinstance(t, torch.Tensor):
         bbox = torch.zeros_like(t)
@@ -198,4 +205,87 @@ def inv_parameterize(t, anchor):
     bbox[3] = torch.exp(t[3]) * anchor[3]
     
     return bbox
+
+
+# %% Utils for plotting results
+    
+def plot(logdir, acc_summary, loss_summary, tau=200):
+    # plot accuracy
+    smooth = weighted_linear_regression(acc_summary, tau)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    # plot val accracy
+    plt.plot([pair[0] for pair in acc_summary],
+             [pair[2] for pair in acc_summary],
+             color='#054E9F', linewidth=3, alpha=0.25)
+    plt.plot([pair[0] for pair in smooth],
+             [pair[2] for pair in smooth],
+             color='#054E9F', linewidth=3)
+    # plot train accuracy
+    plt.plot([pair[0] for pair in acc_summary],
+             [pair[1] for pair in acc_summary],
+             color='coral', linewidth=3, alpha=0.25)
+    plt.plot([pair[0] for pair in smooth],
+             [pair[1] for pair in smooth],
+             color='coral', linewidth=3)
+    xlim = plt.xlim()
+    ylim = plt.ylim()
+    plt.plot([-10000,100000], [0,0], linewidth=2, color='grey')
+    plt.plot([0,0], [-1,2], linewidth=2, color='grey')
+    plt.xlim(xlim)
+    plt.ylim([0.6, 1])
+    plt.grid()
+    for axis in ['top','right']:
+        ax.spines[axis].set_linewidth(0)
+    for axis in ['top','bottom','left','right']:
+        ax.spines[axis].set_color('grey')
+    plt.savefig(os.path.join(logdir, 'acc.pdf'), format='pdf')
+    plt.show()
+    
+    # plot loss
+    smooth = weighted_linear_regression(loss_summary, tau)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    plt.plot([pair[0] for pair in loss_summary],
+             [pair[1] for pair in loss_summary],
+             color='coral', linewidth=3, alpha=0.25)
+    plt.plot([pair[0] for pair in smooth],
+             [pair[1] for pair in smooth],
+             color='coral', linewidth=3)
+    xlim = plt.xlim()
+    ylim = plt.ylim()
+    plt.plot([-10000,100000], [0,0], linewidth=2, color='grey')
+    plt.plot([0,0], [-1,20], linewidth=2, color='grey')
+    plt.xlim(xlim)
+    plt.ylim([ylim[0], int(ylim[1])])
+    plt.grid()
+    for axis in ['top','right']:
+        ax.spines[axis].set_linewidth(0)
+    for axis in ['top','bottom','left','right']:
+        ax.spines[axis].set_color('grey')
+    plt.savefig(os.path.join(logdir, 'loss.pdf'), format='pdf')
+    plt.show()
+
+
+def weighted_linear_regression(summary, tau):
+    smooth = [[pair[0]] for pair in summary]
+    stretch = 64
+    
+    mat = np.array(summary)
+    n = mat.shape[0]
+    x, Y = mat[:,0:1], mat[:,1:mat.shape[1]]
+    X = np.hstack((np.ones((n,1)), x))
+    
+    for j in range(Y.shape[1]):
+        y = Y[:, j:j+1]
+        for i in range(n):
+            lo, hi = i-stretch, i+stretch
+            if lo < 0: lo = 0
+            if hi > n: hi = n
+            W = np.diagflat(np.exp(-np.square(x[lo:hi]-x[i]) / (2*tau**2)))
+            theta = np.dot(np.linalg.inv(X[lo:hi,:].T.dot(W).dot(X[lo:hi,:])),
+                           (X[lo:hi,:].T.dot(W).dot(y[lo:hi,:])))
+            smooth[i].append(float(theta[0]+x[i]*theta[1]))
+    
+    return smooth
 

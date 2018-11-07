@@ -78,6 +78,11 @@ class RegionProposalNetwork(nn.Module):
         y_cls = self.conv_cls(x)
         y_reg = self.conv_reg(x)
         return y_cls, y_reg
+    def weight_init(self):
+        # ~ N(0, 0.01)
+        nn.init.normal_(self.conv_feat.weight, 0, 0.01)
+        nn.init.normal_(self.conv_cls.weight, 0, 0.01)
+        nn.init.normal_(self.conv_reg.weight, 0, 0.01)
 
 
 class FastRCNN(nn.Module):
@@ -95,6 +100,11 @@ class FastRCNN(nn.Module):
         y_cls = self.fc_cls(x)
         y_reg = self.fc_reg(x)
         return y_cls, y_reg
+    def weight_init(self):
+        # for softmax classification ∼ N(0, 0.01)
+        # for bounding-box regression ∼ N(0, 0.001)
+        nn.init.normal_(self.fc_cls.weight, 0, 0.01)
+        nn.init.normal_(self.fc_reg.weight, 0, 0.001)
 
 
 # %% Faster-R-CNN
@@ -118,15 +128,11 @@ class FasterRCNN(nn.Module):
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
         self.children = [self.CNN, self.RPN, self.RCNN]
         
+        # Load parameters of some modules
         for c, f in params.items():
             self.children[c].load_state_dict(torch.load(f))
+        # And randomize the parameters of others
+        for c, child in enumerate(self.children[1:]):
+            if c not in params:
+                child.weight_init()
         
-#    def forward(self, x, is_training=True):
-#        # Extract feature from input x
-#        x = self.CNN(x)
-#        # Get HxWx9*2 classification scores,
-#        # and HxWx9*4 regression coordinates (t_x, t_y, t_w, t_h) for RPN
-#        y_cls, y_reg = self.RPN(x)
-#        
-#        if is_training:
-#            pass

@@ -23,13 +23,13 @@ from consts import anchor_sizes, id2idx
 
 class CocoDetection(Dataset):
     """`MS Coco Detection <http://mscoco.org/dataset/#detections-challenge2017>`_ Dataset.
-    Args:
-        root (string): Root directory where images are downloaded to.
-        annFile (string): Path to json annotation file.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.ToTensor``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
+    Inputs:
+        - root (string): Root directory where images are downloaded to.
+        - annFile (string): Path to json annotation file.
+        - transform (callable, optional): A function/transform that  takes in an PIL image
+          and returns a transformed version. E.g, ``transforms.ToTensor``
+        - target_transform (callable, optional): A function/transform that takes in the
+          target and transforms it.
     """
 
     def __init__(self, root, ann, transform=None):
@@ -41,10 +41,10 @@ class CocoDetection(Dataset):
     
     def __getitem__(self, index):
         """
-        Args:
-            index (int): Index
+        Inputs:
+            - index (int): Index
         Returns:
-            tuple: Tuple (image, targets). targets is the object returned by ``coco.loadAnns``.
+            - tuple: Tuple (image, targets). targets is the object returned by ``coco.loadAnns``.
         """
         coco = self.coco
         img_id = self.ids[index]
@@ -92,10 +92,10 @@ def create_anchors(img, scale):
     wscale, hscale = scale
     _anchor_sizes = [(size[0]*wscale, size[1]*hscale) for size in anchor_sizes]
     anchors = []
-    for _x in img.size[3]:
-        x = _x*wscale
-        for _y in img.size[2]:
-            y = _y*hscale
+    for _y in range(img.size[2]//16):
+        y = _y*hscale
+        for _x in range(img.size[3]//16):
+            x = _x*wscale
             for size in _anchor_sizes:
                 anchors.append((x-size[0], y-size[1], size[0], size[1]))
     return anchors
@@ -120,19 +120,12 @@ def sample_anchors(img, targets):
         for j, target in enumerate(targets):
             IoUs[i,j] = IoU(anchor, target['bbox'])
             
-#    p_samples = []
-#    n_samples = []
     samples = torch.from_numpy(np.array(anchors).T)
     labels = torch.zeros(N, dtype=torch.int8)
     num_samples = 0
     
     # Find the anchor as a positive sample
     # "with the higheset IoU overlap with a ground-truth box"
-#    for j in range(len(targets)):
-#        IoU_j = IoUs[:,j]
-#        i = np.where(IoU_j == np.max(IoU_j))[0][0]
-#        IoUs[i,j] = 0.5  # Not to be chose again
-#        p_samples.append(anchors[i])
     for j in range(len(targets)):
         IoU_j = IoUs[:,j]
         i = np.where(IoU_j == np.max(IoU_j))[0][0]
@@ -147,46 +140,28 @@ def sample_anchors(img, targets):
     
     # Find the anchor as a positive sample
     # "that has an IoU overlap over 0.7 with any ground-truth box"
-#    for i in perms:
-#        if len(p_samples) == 128:
-#            break  # No more than 128 positive samples
-#        if np.any(IoUs[i] > 0.7):
-#            p_samples.append(anchors[i])
     for i in perms:
         if num_samples == 128:
-            break
+            break  # No more than 128 positive samples
         if np.any(IoUs[i] > 0.7):
             labels[i] = 1
             num_samples += 1
     
     # Find the anchor as a negative sample
     # "if its IoU ratio is lower than 0.3 for all ground-truth boxes"
-#    for i in perms:
-#        if len(p_samples)+len(n_samples) == 256:
-#            break  # No more than 256 samples
-#        if np.all(IoUs[i] < 0.3):
-#            n_samples.append(anchors[i])
     for i in perms:
         if num_samples == 256:
-            break
+            break  # No more than 256 samples
         if np.all(IoUs[i] < 0.3):
             labels[i] = -1
             num_samples += 1
-    
-#    _samples = p_samples + n_samples
-#    _labels = [1]*len(p_samples) + [0]*len(n_samples)
-#    # Randomly shuffle the samples
-#    perms = np.arange(256)
-#    np.random.shuffle(perms)
-#    samples = [_samples[i] for i in perms]
-#    labels = [_labels[i] for i in perms]
     
     return samples, labels
 
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, anchors, num_proposals=12000):
+def create_proposals(y_cls, y_reg, img, targets, num_proposals=12000):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -195,15 +170,19 @@ def create_proposals(y_cls, y_reg, anchors, num_proposals=12000):
         - y_cls: Classification scores output by RPN, of size 1x18xHxW (need to validate this)
           (! Note that I only implement the case that batch_size=1)
         - y_reg: Regression coodinates output by RPN, of size 1x36xHxW
-        - anchors: List of anchors (x, y, w, h), of length 9*H*W
+        - ~~anchors: List of anchors (x, y, w, h), of length 9*H*W~~
+        - img: The input image
+        - targets: The ground-truth objects in the image
     Returns:
         - List of proposals that will feed into the Fast R-CNN.
         Should be of length about 2000, but I do not know if it is.
     """
+    anchors = create_anchors(img, targets[0]['scale'])
+    
     y_cls = y_cls.squeeze().view(2, -1)
     y_reg = y_reg.squeeze().view(4, -1)
     
-    scores = torch.nn.functional.log_softmax(y_cls, dim=0)
+    scores = nn.functional.softmax(y_cls, dim=0)
     
     # ! Note the correspondance of y_reg and anchors
     anchors = torch.Tensor(anchors)  # convert list to tensor

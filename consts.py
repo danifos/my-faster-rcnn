@@ -6,6 +6,8 @@ Created on Mon Nov  5 15:01:26 2018
 @author: Ruijie Ni
 """
 
+import torch
+
 # %% compute the size of the 9 anchors
 
 anchor_areas = [128**2, 256**2, 512**2]
@@ -35,17 +37,13 @@ for i, d in enumerate(idx2id):
 
 # %% Define training procedure
 
-def model_to_train(stage):
-    models = [False, False, False]  # CNN, RPN, Fast R-CNN
-    if stage == 0:
-        models[0] = True
-        models[1] = True
-    elif stage == 1:
-        models[0] = True
-        models[2] = True
-    elif stage == 2:
-        models[1] = True
-    elif stage == 3:
-        models[2] = True
-    
-    return models
+model_to_train = [[1, 1, 0],
+                  [1, 0, 1],
+                  [0, 1, 0],
+                  [0, 0, 1]]
+
+
+# %% Basic data type
+ttype = torch.cuda.FloatTensor # use GPU
+dtype = torch.float32
+device = torch.device('cuda')
