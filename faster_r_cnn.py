@@ -100,7 +100,13 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, pretrained=False):
+    def __init__(self, pretrained=False, params):
+        """
+        Inputs:
+            - pretrained: Use pretrained VGG16? (False by default)
+              (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
+            - params: Dictionary of {component : filename} to load state dict
+        """
         super(FastRCNN, self).__init__()
         VGG = torchvision.models.vgg16(pretrained)
         # The features of vgg16, with no max pooling at the end
@@ -110,6 +116,11 @@ class FasterRCNN(nn.Module):
         # 2 fc layers of 4096 as the head of Fast R-CNN
         self.RCNN = FastRCNN(
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
+        self.children = [self.CNN, self.RPN, self.RCNN]
+        
+        for c, f in params.items():
+            self.children[c].load_state_dict(torch.load(f))
+        
 #    def forward(self, x, is_training=True):
 #        # Extract feature from input x
 #        x = self.CNN(x)

@@ -34,7 +34,7 @@ def NMS(lst, sort=False, threshold=0.7):
     Input:
         - lst: List of bounding boxes with a score of each
     Returns:
-        - ret: The selected bounding boxes
+        - ret: List of the selected bounding boxes
     """
     if sort: lst.sort(key=lambda x:x[1])
     else: lst.reverse()

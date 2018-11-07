@@ -20,7 +20,7 @@ for area in anchor_areas:
 # %% consts that apply to all scripts
 
 logdir = 'result'
-stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
+#stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
 num_classes = 80
 num_anchors = 9
 
@@ -31,3 +31,21 @@ idx2id = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 
 id2idx = {}
 for i, d in enumerate(idx2id):
     id2idx[d] = i
+
+
+# %% Define training procedure
+
+def model_to_train(stage):
+    models = [False, False, False]  # CNN, RPN, Fast R-CNN
+    if stage == 0:
+        models[0] = True
+        models[1] = True
+    elif stage == 1:
+        models[0] = True
+        models[2] = True
+    elif stage == 2:
+        models[1] = True
+    elif stage == 3:
+        models[2] = True
+    
+    return models

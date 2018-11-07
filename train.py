@@ -27,7 +27,7 @@ import torchvision.transforms as T
 
 from sampler import CocoDetection, sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
-from consts import logdir, stage_names
+from consts import logdir, model_to_train
 
 # %% Basic settings
 
@@ -68,55 +68,127 @@ loader_val = DataLoader(coco_val, batch_size=batch_size,
                         sampler=sampler.SubsetRandomSampler(coco_val))
 
 
-# %% Load pre-trained CNN
+# %% Initialization
 
 def init():
-    """Initialize the model, epoch and step, loss and acc summary."""
+    """
+    Initialize the model, epoch and step, loss and mAP summary.
+    """
+    global stage
     
-    global model
-    global epoch, step, loss_summary, acc_summary
+    stage = 0
+    files = None
+    summary_dic = None
     
-    epoch = 0
-    step = 0
-    
-    for cur, _, files in os.walk('./'):  # check if we have the logdir already
-        if cur == './{}'.format(logdir):  # we've found it
-            # load basic vgg16 features
-            model = FasterRCNN(pretrained = False)
-            
-            # find the latest checkpoint file (.pkl)
-            prefix, suffix = 'fine-tune-', '.pkl'
-            file = None
-            for ckpt in files:
-                if not ckpt.endswith(suffix): continue
-                info = ckpt[ckpt.find(prefix)+len(prefix) : ckpt.rfind(suffix)]
-                e, s= [int(i)+1 for i in info.split('-')]
-                if e > epoch or e == epoch and s > step:
-                    epoch = e
-                    step = s
-                    file = ckpt
-            # load the parameters from the file
-            if file:
-                print('Recovering from {}/{}'.format(logdir, file))
-                model.load_state_dict(torch.load(os.path.join(logdir, file)))
-            else:
-                print('***ERROR*** No .pkl file was found!')
-            
-            # open the summary file
-            with open(os.path.join(logdir, 'summary'), 'rb') as fo:
+    for cur, _, files in os.walk('.'):  # check if we have the logdir already
+        if cur == os.path.join('.', logdir):  # we've found it
+            # open the summary file, get the stage number
+            with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
                 dic = pickle.load(fo, encoding='bytes')
-                loss_summary = dic['loss']
-                acc_summary = dic['acc']
+                stage = dic['stage']
+            
+            # open the summary file for the stage only
+            with open(os.path.join(logdir, 'summary-{}.pkl'.format(stage)), 'rb') as fo:
+                summary_dic = pickle.load(fo, encoding='bytes')
             
             break
         
-    else:  # there's not
+    else:  # there's not, make one
         os.mkdir(logdir)
-        # load the feature map of a pretrained vgg16
-        model = FasterRCNN(pretrained = True)
+        # And we start from stage 0
+        save_stage()
         
+    
+    files_dic = search_files(files)
+    stage_init(summary_dic, files_dic)
+
+
+def search_files(files):
+    """
+    Inputs:
+        - files: filenames in the current logdir
+    Returns:
+        - Dic with the format {(comp, stage) : {'filename':..., 'epoch':..., 'step':...}}
+    """
+    dic = {}
+    # find the latest checkpoint files for each presisting stage (.pkl)
+    prefix, suffix = 'param-', '.pkl'
+    for ckpt in files:
+        if not (ckpt.startswith(prefix) and ckpt.endswith(suffix)): continue
+        info = ckpt[ckpt.find(prefix)+len(prefix) : ckpt.rfind(suffix)]
+        c, t, e, s= [int(i)+1 for i in info.split('-')]
+        
+        flag = False
+        if (c, t) in dic:
+            subdic = dic[(c, t)]
+            if e > subdic['epoch'] or e == subdic['epoch'] and s > subdic['step']:
+                flag = True
+        else:
+            flag = True
+        
+        if flag:
+            subdic['filename'] = os.path.join(logdir, ckpt)
+            subdic['epoch'] = e
+            subdic['step'] = s
+    
+    return dic
+
+
+def stage_init(summary_dic, files_dic):
+    global model, epoch, step
+    global loss_summary, map_summary
+    
+    # Are we resuming a stage?
+    for i in range(len(model.chilren)):
+        if(i, stage) in files_dic:
+            resume = True
+            break
+    else:
+        resume = False
+    
+    # Load summary
+    if resume:
+        if stage == 3:
+            map_summary = summary_dic['map']
+        loss_summary = summary_dic['loss']
+    else:
+        if stage == 3:
+            map_summary = []
         loss_summary = []
-        acc_summary = []
+    
+    # Load model
+    model = None
+    params = {}
+    if stage < 2:  # the first 2 stages
+        pretrained = True
+    else:
+        pretrained = False
+    
+    if resume:
+        # Load some checkpoint files from the current stage (if any)
+        for idx, flag in enumerate(model_to_train(stage)):
+            if flag:
+                subdic = files_dic[(idx, stage)]
+                params[idx] = subdic['filename']
+                epoch = subdic['epoch']
+                step = subdic['step']
+    else:
+        # Otherwise these components will be initialized randomly
+        # And epoch and step will be set to 0
+        epoch = 0
+        step = 0
+    
+    # For certain stages, we also load checkpoint files of the previous stages
+    if stage == 2:
+        params[0] = files_dic[(0, 1)]['filename']  # load CNN of stage 1
+        if 1 not in params:
+            params[1] = files_dic[(1, 0)]['filename']  # load RPN of stage 0
+    elif stage == 3:
+        params[0] = files_dic[(0, 1)]['filename']  # load CNN of stage 1
+        if 2 not in params:
+            params[2] = files_dic[(2, 2)]['filename']  # load RCNN of stage 2
+    
+    model = FasterRCNN(pretrained, params)
         
     # move to GPU
     model = model.to(device=device)
@@ -124,19 +196,30 @@ def init():
 
 # %% Save
 
-def save_model(stage, e, step):
-    filename = os.path.join(logdir,
-                            stage_names[stage],
-                            'fine-tune-{}-{}.pkl'.format(e, step))
-    torch.save(model.state_dict(), filename)
+def save_model():
+    for idx, flag in enumerate(model_to_train(stage)):
+        if flag:
+            filename = os.path.join(logdir,
+                'param-{}-{}-{}-{}.pkl'.format(idx, stage, epoch, step))
+            torch.save(model.children[idx].state_dict(), filename)
+        
     print('Saved model successfully')
     print('Next epoch will start 60s later')
     sleep(60)
 
 
-def save_summary(stage):
-    file = open(os.path.join(logdir, stage_names[stage], 'summary'), 'wb')
-    pickle.dump({'loss':loss_summary, 'acc':acc_summary}, file)
+def save_stage():
+    file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
+    pickle.dump({'stage':stage})
+    file.close()
+
+
+def save_summary():
+    file = open(os.path.join(logdir, 'summary-{}.pkl'.format(stage)), 'wb')
+    if stage == 3:
+        pickle.dump({'loss':loss_summary, 'map':map_summary}, file)
+    else:
+        pickle.dump({'loss':loss_summary}, file)
     file.close()
 
 
