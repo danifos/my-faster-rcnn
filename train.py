@@ -266,12 +266,12 @@ def train(print_every=100):
                 loss = RPN_loss(RPN_cls, labels, RPN_reg, samples)
             else:
                 # Create about 2000 region proposals
-                proposals = create_proposals(RPN_cls, RPN_reg, x, y)
+                proposals = create_proposals(RPN_cls, RPN_reg, x)
                 # Sample 128 proposals
                 samples, gt_coords, gt_labels = sample_proposals(proposals, y)
                 # Get Nx81 classification scores
                 # and Nx324 regression coordinates of Fast R-CNN
-                RCNN_cls, RCNN_reg = model.RCNN(samples)
+                RCNN_cls, RCNN_reg = model.RCNN(features, x, samples)
                 # Compute RoI loss
                 loss = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords)
             

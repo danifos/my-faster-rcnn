@@ -41,7 +41,7 @@ def check_mAP(model, loader, total_batches=0):
         features = model.CNN(x)
         RPN_cls, RPN_reg = model.RPN(features)
         proposals = create_proposals(RPN_cls, RPN_reg, x, y)
-        RCNN_cls, RCNN_reg = model.RCNN(proposals)
+        RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals)
         N = RCNN_reg.shape[0]
         RCNN_cls = nn.functional.softmax(RCNN_cls, dim=1).numpy()
         RCNN_reg = inv_parameterize(RCNN_reg.view(N, 4, -1).transpose(0, 1)).numpy()

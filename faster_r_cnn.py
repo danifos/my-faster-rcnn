@@ -37,12 +37,13 @@ class RoIPooling(nn.Module):
               (! Note that I only implement the case that batch_size=1 at this stage)
             - img: Image of size 1x3xhxw (I need to know the origin size)
             - rois: Tensor of size Nx4 (or 5 = 1 img_id + 4 coords?)
+              scale as the input scale
         Returns:
             - ret: Tensor of size NxCx7x7
         """
         N = rois.size[0]
         
-        # Rescale rois (from h,w scale to H,W scale)
+        # Rescale rois (from h,w scale (input scale) to H,W scale (feature scale))
         w, h = img.size[3], img.size[2]
         W, H = x.size[3], x.size[2]
         wscale, hscale = W/w, H/h  # approximately 1/16
@@ -93,8 +94,16 @@ class FastRCNN(nn.Module):
         self.flatten = Flatten()
         self.fc_cls = nn.Linear(4096, num_classes+1)
         self.fc_reg = nn.Lienar(4096, 4*(num_classes+1))
-    def forward(self, x):
-        x = self.RoIPooling(x)
+    def forward(self, x, img, rois):
+        """
+        Inputs:
+            - The same as RoIPooling
+        Returns:
+            - y_cls: Tensor of classification scores (Nx(C+1))
+            - y_reg: Tensor of regression coords (Nx4(C+1))
+              scale as after parameterization on proposals
+        """
+        x = self.RoIPooling(x, img, rois)
         x = self.fc_head(x)
         x = self.flatten(x)
         y_cls = self.fc_cls(x)

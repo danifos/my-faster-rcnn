@@ -117,17 +117,19 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
         - p_s: The binary class label of an anchor mentioned before (size: N)
           (For convenient, I denote positive 1, negative -1, and no-contrib 0)
         - t: A vector representing the 4 parameterized coordinates
-          of the predicted bounding box (size: ~~4xN~~ 1x36xHxW)
-        - t_s: That of the ground-truth box associated with a positive anchor (size: 4xN)
+          of the predicted bounding box (size: ~~4xN~~ 1x36xHxW),
+          scale as parameterization on anchors
+        - t_s: That of the ground-truth box associated with a positive anchor (size: 4xN),
+          scale as parameterization on anchors
         - lbd: The balancing parameter lambda
     Returns:
         - loss: A scalar tensor of the loss
     """
-    # Outputs of RPN corresponding the anchors
+    # Outputs of RPN corresponding the anchors (flatten in the same way)
     p = p.squeeze().view(2, -1)
     t = t.squeeze().view(4, -1)
     N_cls = 256
-    N_reg = p.size[1]
+    N_reg = p.shape[1]
     loss = nn.functional.cross_entropy(p.t(), p_s, reduce=False) / N_cls \
          + lbd * (p_s+1)/2 * smooth_L1(t - t_s) / N_reg
     loss *= (p_s != 0)  # ignore those samples that have no contribution
@@ -144,12 +146,15 @@ def RoI_loss(p, u, t, v, lbd=1):
         - p: Discrete probability distribution per RoI output by Fast R-CNN (size: Nx(C+1))
         - u: Ground-truth class per RoI (size: N)
         - t: Prediction of the true bounding-box regression targets (size: Nx4*(C+1))
+          scale as parameterization on proposals
         - v: Ground-truth bounding-box regression targets (size: Nx4)
+          scale as parameterization on proposals
     Returns:
         - loss: A scalar tensor of the loss
     """
     # ! Note: Where there is a `view`, there is a wait
-    N = t.size[0]
+    # (but here, it appears that it doesn't matter - the prediction is output by an fc layer)
+    N = t.shape[0]
     t = t.view(N, 4, -1)
     bbox_u = [None] * N
     for i in range(N):
@@ -164,18 +169,23 @@ def RoI_loss(p, u, t, v, lbd=1):
 
 # %% Utils for parameterization
 
-def parameterize(bbox, anchor):
+def parameterize(bbox, anchor, dtype=None):
     """
     Inputs:
         - bbox: Tensor of size 4xN [(x, y, w, h) for each]
-        - anchor: Tensor of size 4xN [(x, y, w, h) for each]
+          scale as input
+        - anchor: Tensor of size 4xN [(x, y, w, h) for each] (or proposal)
+          scale as input
     Returns:
         - t: Parameterized coordinates
+          scale as parameterization
     """
-    if isinstance(bbox, torch.Tensor):
-        t = torch.zeros_like(bbox)
+    if dtype:
+        t = dtype(bbox.shape)
+    elif isinstance(bbox, torch.Tensor):
+        t = torch.Tensor(bbox.shape)
     else:
-        t = [0] * len(bbox)
+        t = [None] * len(bbox)
         
     t[0] = (bbox[0] - anchor[0]) / anchor[2]
     t[1] = (bbox[1] - anchor[1]) / anchor[3]
@@ -185,19 +195,24 @@ def parameterize(bbox, anchor):
     return t
 
 
-def inv_parameterize(t, anchor):
+def inv_parameterize(t, anchor, dtype=None):
     """
     Inputs:
         - t: Parameterized coordinates
+          scale as parameterization
         - anchor: Tuple of size 4 or 
           Tensor of size 4xN or 4xHxW [(x, y, w, h) for each]
+          scale as input
     Returns:
         - bbox: Tuple or Tensor of the same type and size
+          scale as input
     """
-    if isinstance(t, torch.Tensor):
-        bbox = torch.zeros_like(t)
+    if dtype:
+        bbox = dtype(t.shape)
+    elif isinstance(t, torch.Tensor):
+        bbox = torch.Tensor(t.shape)
     else:
-        bbox = [0] * len(t)
+        bbox = [None] * len(t)
         
     bbox[0] = t[0] * anchor[2] + anchor[0]
     bbox[1] = t[1] * anchor[3] + anchor[1]

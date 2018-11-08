@@ -88,16 +88,26 @@ class CocoDetection(Dataset):
 
 # %% Anchors creator and sampler (256 each)
 
-def create_anchors(img, scale):
-    wscale, hscale = scale
-    _anchor_sizes = [(size[0]*wscale, size[1]*hscale) for size in anchor_sizes]
-    anchors = []
-    for _y in range(img.size[2]//16):
-        y = _y*hscale
-        for _x in range(img.size[3]//16):
-            x = _x*wscale
-            for size in _anchor_sizes:
-                anchors.append((x-size[0], y-size[1], size[0], size[1]))
+def create_anchors(img):
+    """
+    Inputs:
+        - img: The input image
+    Returns:
+        - ~~List of anchors of length 9*H*W, scale as input~~
+        - Tensor of anchors of size 4x9xHxW, scale as input
+    """
+    w, h = img.size[3], img.size[2]
+    W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
+    wscale, hscale = w/W, h/H  # map anchors in the features to the image
+    
+    anchors = torch.Tensor(4, 9, H, W)
+    x = (torch.arange(W)*wscale).view(1, 1, 1, -1)
+    y = (torch.arange(H)*hscale).view(1, 1, -1, 1)
+    for i, size in enumerate(anchor_sizes):
+        anchors[0,i] = x-size[0]
+        anchors[1,i] = y-size[0]
+        anchors[2,i] = size[0]
+        anchors[3,i] = size[1]
     return anchors
 
 
@@ -108,19 +118,22 @@ def sample_anchors(img, targets):
         - targets: The ground-truth objects in the image
     Returns:
         - ~~samples: List of sampled anchors, of length 256~~
-        - samples: Tensor of size 4x(9*H*W), denoting the coords of each sample
+        - ~~samples: Tensor of size 4x(9*H*W), denoting the coords of each sample,~~
+        - samples: Tensor of size 4x9xHxW, denoting the coords of each sample,
+          scale as parameterization on anchors
         - ~~labels: List of corresponding labels for the anchors, of length 256~~
         - labels: CharTensor of size (9*H*W), denoting the label of each sample
           (1: positive, -1: negative, 0: neither)
     """
-    anchors = create_anchors(img, targets[0]['scale'])
-    N, M = len(anchors), len(targets)
+    anchors = create_anchors(img).view(4, -1)  # flatten the 4x9xHxW to 4x(9*H*W)
+    N, M = anchors.shape[1], len(targets)
     IoUs = np.zeros(N, M)
-    for i, anchor in enumerate(anchors):
+    for i, anchor in enumerate(anchors):  # Yes, Tensor can also be "enumerate"d
         for j, target in enumerate(targets):
             IoUs[i,j] = IoU(anchor, target['bbox'])
             
-    samples = torch.from_numpy(np.array(anchors).T)
+#    samples = torch.from_numpy(np.array(anchors).T)
+    samples = torch.zeros(anchors.shape)
     labels = torch.zeros(N, dtype=torch.int8)
     num_samples = 0
     
@@ -131,11 +144,12 @@ def sample_anchors(img, targets):
         i = np.where(IoU_j == np.max(IoU_j))[0][0]
         IoUs[i,j] = 0.5  # Not to be chose again
         labels[i] = 1
+        samples[:,i] = parameterize(targets[j], anchors, torch.FloatTensor)
         num_samples += 1
         # ! Assume that there's no more than 128 targets
     
     # For the sake of randomness, map i to another index
-    perms = np.arange(len(anchors))
+    perms = np.arange(N)
     np.random.shuffle(perms)
     
     # Find the anchor as a positive sample
@@ -161,7 +175,7 @@ def sample_anchors(img, targets):
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, img, targets, num_proposals=12000):
+def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -169,15 +183,16 @@ def create_proposals(y_cls, y_reg, img, targets, num_proposals=12000):
     Inputs:
         - y_cls: Classification scores output by RPN, of size 1x18xHxW (need to validate this)
           (! Note that I only implement the case that batch_size=1)
-        - y_reg: Regression coodinates output by RPN, of size 1x36xHxW
+        - y_reg: Regression coodinates output by RPN, of size 1x36xHxW,
+          scale as parameterization on anchors (obviously)
         - ~~anchors: List of anchors (x, y, w, h), of length 9*H*W~~
         - img: The input image
-        - targets: The ground-truth objects in the image
     Returns:
-        - List of proposals that will feed into the Fast R-CNN.
-        Should be of length about 2000, but I do not know if it is.
+        - List of proposals that will be fed into the Fast R-CNN.
+          scale as input
+          Should be of length about 2000, but I do not know if it is.
     """
-    anchors = create_anchors(img, targets[0]['scale'])
+    anchors = create_anchors(img)
     
     y_cls = y_cls.squeeze().view(2, -1)
     y_reg = y_reg.squeeze().view(4, -1)
@@ -185,8 +200,9 @@ def create_proposals(y_cls, y_reg, img, targets, num_proposals=12000):
     scores = nn.functional.softmax(y_cls, dim=0)
     
     # ! Note the correspondance of y_reg and anchors
-    anchors = torch.Tensor(anchors)  # convert list to tensor
-    coords = inv_parameterize(y_reg, anchors.T)  # corrected coords of anchors
+#    anchors = torch.from_numpy(np.array(anchors))  # convert list to tensor
+    coords = inv_parameterize(y_reg.squeeze().view(4, 9, ...),
+                              anchors)  # corrected coords of anchors, back to input scale
     
     # Find n highest proposals
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
@@ -207,10 +223,13 @@ def sample_proposals(proposals, targets, num_samples=128):
     
     Inputs:
         - proposals: List of proposals made by `create_proposals`
+          sacle as the input
         - targets: Ground-truth of the image
     Returns:
         - samples: Tensor of sampled proposals of size Nx4
+          scale as input
         - gt_coords: Tensor of ground-truth boxes of size Nx4
+          scale as parameterization on proposals
         - gt_labels: Tensor sof ground-truth classes of size N
     """
     samples, gt_coords, gt_labels = [], [], []
