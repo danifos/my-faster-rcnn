@@ -32,6 +32,34 @@ def IoU(bb1, bb2):
     return (xb-xa)*(yb-ya)
 
 
+def clip_box(lst, W, H):
+    """
+    Clip bounding boxes to limit them in a scale.
+    
+    Inputs:
+        - lst: List of bounding boxes (x, y, w, h)
+        - W: Width to be limited
+        - H: Height to be limited
+    Returns:
+        - ret: List of clipped bounding boxes
+          (x >= 0, y >=0, x+w <= W, y+h <= H)
+    """
+    ret = []
+    for x, y, w, h in lst:
+        if x < 0:
+            w += x
+            x = 0
+        if y < 0:
+            h += y
+            y = 0
+        w = min(w, W-x)
+        h = min(h, H-y)
+        if x > 0 and y > 0 and w > 0 and h > 0:
+            ret.append((x, y, w, h))
+    
+    return ret
+
+
 def NMS(lst, sort=False, threshold=0.7):
     """
     Input:

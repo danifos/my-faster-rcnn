@@ -13,7 +13,7 @@ import torch.nn as nn
 import torchvision
 
 from consts import num_classes
-#from sampler import sample_anchors, create_proposals, sample_proposals
+from utility import clip_box
 
 
 # %% Utility layers
@@ -22,7 +22,7 @@ class Flatten(nn.Module):
     def __init__(self):
         super(Flatten, self).__init__()
     def forward(self, x):
-        N = x.size[0]
+        N = x.shape[0]
         return x.view(N, -1)
 
 
@@ -41,11 +41,11 @@ class RoIPooling(nn.Module):
         Returns:
             - ret: Tensor of size NxCx7x7
         """
-        N = rois.size[0]
+        N = rois.shape[0]
         
         # Rescale rois (from h,w scale (input scale) to H,W scale (feature scale))
-        w, h = img.size[3], img.size[2]
-        W, H = x.size[3], x.size[2]
+        w, h = img.shape[3], img.shape[2]
+        W, H = x.shape[3], x.shape[2]
         wscale, hscale = W/w, H/h  # approximately 1/16
         rois[:,0] = rois[:,0]*wscale
         rois[:,1] = rois[:,1]*hscale

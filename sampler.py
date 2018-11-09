@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 import torchvision.transforms as T
 from PIL import Image
 
-from utility import IoU, parameterize, inv_parameterize, NMS
+from utility import IoU, parameterize, inv_parameterize, clip_box, NMS
 from consts import anchor_sizes, id2idx
         
 
@@ -96,7 +96,7 @@ def create_anchors(img):
         - ~~List of anchors of length 9*H*W, scale as input~~
         - Tensor of anchors of size 4x9xHxW, scale as input
     """
-    w, h = img.size[3], img.size[2]
+    w, h = img.shape[3], img.shape[2]
     W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     
@@ -207,6 +207,8 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     # Find n highest proposals
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     lst = [coords[i] for i in indices[:num_proposals]]
+    
+    lst = clip_box(lst, img.shape[3], img.shape[2])
     
     return NMS(lst)
 
