@@ -69,7 +69,8 @@ class RoIPooling(nn.Module):
 class RegionProposalNetwork(nn.Module):
     def __init__(self):
         super(RegionProposalNetwork, self).__init__()
-        self.conv_feat = nn.Conv2d(512, 512, kernel_size=(3,3), stride=1, padding=0)
+        # padding 1 to keep the map of the same size
+        self.conv_feat = nn.Conv2d(512, 512, kernel_size=(3,3), stride=1, padding=1)
         self.relu = nn.ReLU(inplace=True)
         self.conv_cls = nn.Conv2d(512, 18, kernel_size=(1,1), stride=1, padding=0)
         self.conv_reg = nn.Conv2d(512, 36, kernel_size=(1,1), stride=1, padding=0)
@@ -88,12 +89,12 @@ class RegionProposalNetwork(nn.Module):
 
 class FastRCNN(nn.Module):
     def __init__(self, head):
-        super(RegionProposalNetwork, self).__init__()
+        super(FastRCNN, self).__init__()
         self.RoIPooling = RoIPooling((7,7))
         self.fc_head = head
         self.flatten = Flatten()
         self.fc_cls = nn.Linear(4096, num_classes+1)
-        self.fc_reg = nn.Lienar(4096, 4*(num_classes+1))
+        self.fc_reg = nn.Linear(4096, 4*(num_classes+1))
     def forward(self, x, img, rois):
         """
         Inputs:
@@ -119,14 +120,14 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, pretrained=False, params):
+    def __init__(self, params, pretrained=False):
         """
         Inputs:
             - pretrained: Use pretrained VGG16? (False by default)
               (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
             - params: Dictionary of {component : filename} to load state dict
         """
-        super(FastRCNN, self).__init__()
+        super(FasterRCNN, self).__init__()
         VGG = torchvision.models.vgg16(pretrained)
         # The features of vgg16, with no max pooling at the end
         self.CNN = nn.Sequential(*list(VGG.features.children())[:-1])
@@ -135,13 +136,13 @@ class FasterRCNN(nn.Module):
         # 2 fc layers of 4096 as the head of Fast R-CNN
         self.RCNN = FastRCNN(
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
-        self.children = [self.CNN, self.RPN, self.RCNN]
+        self.submodules = [self.CNN, self.RPN, self.RCNN]
         
         # Load parameters of some modules
         for c, f in params.items():
-            self.children[c].load_state_dict(torch.load(f))
+            self.submodules[c].load_state_dict(torch.load(f))
         # And randomize the parameters of others
-        for c, child in enumerate(self.children[1:]):
+        for c, child in enumerate(self.submodules[1:]):
             if c not in params:
                 child.weight_init()
         

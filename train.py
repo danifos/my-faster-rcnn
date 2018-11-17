@@ -60,9 +60,9 @@ coco_val = CocoDetection(root=val_data_dir, ann=val_ann_dir, transform=transform
 # %% Data loders
 
 loader_train = DataLoader(coco_train, batch_size=1,
-                           sampler=sampler.SubsetRandomSampler(coco_train))
+                           sampler=sampler.SubsetRandomSampler(range(len(coco_train))))
 loader_val = DataLoader(coco_val, batch_size=1,
-                        sampler=sampler.SubsetRandomSampler(coco_val))
+                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
 
 
 # %% Initialization
@@ -144,7 +144,7 @@ def stage_init(summary_dic, files_dic):
     global loss_summary, map_summary
     
     # Are we resuming a stage?
-    for i in range(len(model.chilren)):
+    for i in range(3):  # 3 is the number of submodules of model
         if(i, stage) in files_dic:
             resume = True
             break
@@ -193,7 +193,7 @@ def stage_init(summary_dic, files_dic):
         if 2 not in params:
             params[2] = files_dic[(2, 2)]['filename']  # load RCNN of stage 2
     
-    model = FasterRCNN(pretrained, params)
+    model = FasterRCNN(params, pretrained)
         
     # move to GPU
     model = model.to(device=device)
@@ -206,7 +206,7 @@ def save_model():
         if flag:
             filename = os.path.join(logdir,
                 'param-{}-{}-{}-{}.pkl'.format(idx, stage, epoch, step))
-            torch.save(model.children[idx].state_dict(), filename)
+            torch.save(model.submodules[idx].state_dict(), filename)
         
     print('Saved model successfully')
     print('Next epoch will start 60s later')
@@ -215,7 +215,7 @@ def save_model():
 
 def save_stage():
     file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
-    pickle.dump({'stage':stage})
+    pickle.dump({'stage':stage}, file)
     file.close()
 
 
@@ -231,7 +231,10 @@ def save_summary():
 # %% Training procedure
 
 def get_optimizer():
-    params = [{'params': model.children[c].parameters()} for c in model_to_train[stage]]
+    params = []
+    for i, c in enumerate(model_to_train[stage]):
+        if c:
+            params.append({'params': model.submodules[i].parameters()})
     return optim.SGD(params,
                      lr=learning_rate,
                      momentum=0.9,
@@ -249,6 +252,7 @@ def train(print_every=100):
         print('- Epoch {}'.format(e))
         
         for x, y in loader_train:  # an image and its targets
+            if len(y) == 0: continue  # no target in this image
             model.train()  # put model to train mode
             x = x.to(device=device, dtype=dtype)
             
@@ -262,6 +266,8 @@ def train(print_every=100):
             if stage == 0 or stage == 2:
                 # Sample 256 anchors
                 samples, labels = sample_anchors(x, y)
+                samples = samples.to(device=device, dtype=dtype)
+                labels = labels.to(device=device, dtype=torch.long)
                 # Compute RPN loss
                 loss = RPN_loss(RPN_cls, labels, RPN_reg, samples)
             else:
@@ -297,6 +303,8 @@ def train(print_every=100):
                     print('val mAP = {:.1f}'.format(100 * val_mAP))
                     
                     save_summary()
+                else:
+                    print()
                 
             step += 1
         
@@ -319,6 +327,7 @@ def train(print_every=100):
 def main():
     global stage
     
+    stage = 0
     while(stage <= 3):
         init()
         

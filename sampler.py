@@ -54,7 +54,7 @@ class CocoDetection(Dataset):
         path = coco.loadImgs(img_id)[0]['file_name']
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
-        
+
         # "Rescale the image such that the short side is s=600 pixels"
         width, height = img.width, img.height
         if height < width:
@@ -67,18 +67,20 @@ class CocoDetection(Dataset):
         
         if self.transform is not None:
             img = self.transform(img)
+
+        if len(targets) == 0:  # maybe there's an image without a target,
+            return img, target  # and for convenient, I just skip it.
         
         # Rescale the bounding box together
-        if 'scale' not in targets[0]:
-            wscale, hscale = w/width, h/height
-            # The first target store the scale imfomation
-            targets[0]['scale'] = (wscale, hscale)
+        if 'scale' not in targets[0]:  # if is not processed
+            scale = w/width, h/height
+            # The first target store the scale information
+            targets[0]['scale'] = scale
             for target in targets:
                 bbox = target['bbox']
-                bbox[0] *= wscale  # x
-                bbox[1] *= hscale  # y
-                bbox[2] *= wscale  # w
-                bbox[3] *= hscale  # h
+                # Resize bounding-boxes with scale
+                for i in range(4):
+                    bbox[i] = np.array(bbox[i]*scale[i%2], dtype=np.float32)
 
         return img, targets
 
@@ -115,7 +117,8 @@ def sample_anchors(img, targets):
     """
     Inputs:
         - img: The input image
-        - targets: The ground-truth objects in the image
+        - targets: The ground-truth objects in the image,
+          numpy in which are transformed to scalar tensors
     Returns:
         - ~~samples: List of sampled anchors, of length 256~~
         - ~~samples: Tensor of size 4x(9*H*W), denoting the coords of each sample,~~
@@ -127,8 +130,8 @@ def sample_anchors(img, targets):
     """
     anchors = create_anchors(img).view(4, -1)  # flatten the 4x9xHxW to 4x(9*H*W)
     N, M = anchors.shape[1], len(targets)
-    IoUs = np.zeros(N, M)
-    for i, anchor in enumerate(anchors):  # Yes, Tensor can also be "enumerate"d
+    IoUs = np.zeros((N, M))
+    for i, anchor in enumerate(anchors.t()):  # Yes, Tensor can also be "enumerate"d
         for j, target in enumerate(targets):
             IoUs[i,j] = IoU(anchor, target['bbox'])
             
@@ -144,7 +147,7 @@ def sample_anchors(img, targets):
         i = np.where(IoU_j == np.max(IoU_j))[0][0]
         IoUs[i,j] = 0.5  # Not to be chose again
         labels[i] = 1
-        samples[:,i] = parameterize(targets[j], anchors, torch.FloatTensor)
+        samples[:,i] = parameterize(targets[j]['bbox'], anchors[:,i], torch.Tensor)
         num_samples += 1
         # ! Assume that there's no more than 128 targets
     
@@ -243,7 +246,7 @@ def sample_proposals(proposals, targets, num_samples=128):
     IoUs = np.zeros((len(proposals, len(targets))))
     for i, proposal in enumerate(proposals):
         for j, target in enumerate(targets):
-            IoUs[i,j] = IoU(proposal, target['bbox'])
+            IoUs[i,j] = IoU(proposal, list(target['bbox']))
     max_IoUs = np.max(IoU, axis=1)  # Max IoU for each proposal
     
     perms = np.arange(len(proposals))

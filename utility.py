@@ -131,7 +131,7 @@ def smooth_L1(x, dim=0):
     Returns:
         - loss: Tensor of size N
     """
-    mask = (torch.abs(x) < 1)
+    mask = (torch.abs(x) < 1).float()
     loss = torch.sum(mask*0.5*torch.pow(x, 2) + (1-mask)*(torch.abs(x)-0.5), dim)
     return loss
 
@@ -158,9 +158,9 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
     t = t.squeeze().view(4, -1)
     N_cls = 256
     N_reg = p.shape[1]
-    loss = nn.functional.cross_entropy(p.t(), p_s, reduce=False) / N_cls \
-         + lbd * (p_s+1)/2 * smooth_L1(t - t_s) / N_reg
-    loss *= (p_s != 0)  # ignore those samples that have no contribution
+    loss = nn.functional.cross_entropy(p.t(), torch.abs(p_s), reduction='none') / N_cls \
+         + lbd * ((p_s+1)/2).float() * smooth_L1(t - t_s) / N_reg
+    loss *= (p_s != 0).float()  # ignore those samples that have no contribution
     loss = torch.sum(loss)
     
     return loss
@@ -201,15 +201,19 @@ def parameterize(bbox, anchor, dtype=None):
     """
     Inputs:
         - bbox: Tensor of size 4xN [(x, y, w, h) for each]
+          or list [x, y, w, h]
           scale as input
-        - anchor: Tensor of size 4xN [(x, y, w, h) for each] (or proposal)
+        - anchor: Tensor of size 4xN or 4 [(x, y, w, h) for each] (or proposal)
           scale as input
     Returns:
         - t: Parameterized coordinates
           scale as parameterization
     """
     if dtype:
-        t = dtype(bbox.shape)
+        if isinstance(bbox, list):
+            t = dtype(4)
+        else:
+            t = dtype(bbox.shape)
     elif isinstance(bbox, torch.Tensor):
         t = torch.Tensor(bbox.shape)
     else:
