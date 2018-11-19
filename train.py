@@ -32,10 +32,10 @@ from test import check_mAP
 
 # changed
 hyper_params_dics = [
-    {'num_epochs':10, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
-    {'num_epochs':10, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
-    {'num_epochs':10, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]},
-    {'num_epochs':10, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]}
+    {'num_epochs':1, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
+    {'num_epochs':1, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
+    {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]},
+    {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]}
 ]
 
 # unchanged

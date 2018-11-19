@@ -18,18 +18,49 @@ from consts import num_classes, id2idx
 
 # %% Utils for bounding boxes and others
 
-def IoU(bb1, bb2):
+def _IoU(bb1, bb2):
+    """ Singe pair of bounding boxes version of IoU() """
     xa1, ya1, w1, h1 = bb1
     xa2, ya2, w2, h2 = bb2
     xb1, yb1 = xa1+w1, ya1+h1
     xb2, yb2 = xa2+w2, ya2+h2
-    
-    if xa1 >= xa2 or ya1 >= ya2 or xb1 <= xb2 or yb1 <= yb2:
-        return 0
-    
-    xa, ya = max(xa1, xa2), max(ya1, ya2)
-    xb, yb = min(xb1, xb2), min(yb1, yb2)
-    return (xb-xa)*(yb-ya)
+
+    xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)
+    xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)
+
+    w = torch.max(xb-xa, 0)
+    h = torch.max(yb-ya, 0)
+    I = w*h
+    U = w1*h1 + w2*h2 - I
+
+    return I/U
+
+def IoU(bb1, bb2):
+    """
+    Inputs:
+        - bb1: Tensor of shape (4, N)
+        - bb2: Tensor of shape (4, M), 4 for (x, y, w, h)
+    Returns:
+        - Tensor of shape (N, M)
+    """
+    _, N = bb1.shape
+    _, M = bb2.shape
+
+    xa1, ya1, w1, h1 = bb1.view(4, N, 1)  # shape (N, 1)
+    xa2, ya2, w2, h2 = bb2.view(4, 1, M)  # shape (1, M)
+    xb1, yb1 = xa1+w1, ya1+h1  # shape (N, 1)
+    xb2, yb2 = xa2+w2, ya2+w2  # shape (1, M)
+
+    xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)  # shape (N, M)
+    xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)  # shape (N, M)
+
+    zeros = torch.zeros(N, M)
+    w = torch.max(xb-xa, zeros)
+    h = torch.max(yb-ya, zeros)
+    I = w*h
+    U = w1*h1 + w2*h2 - I
+
+    return I/U
 
 
 def clip_box(lst, W, H):
@@ -77,7 +108,7 @@ def NMS(lst, sort=False, threshold=0.7):
         i = 0
         while i < len(lst):
             bb2 = lst[i]
-            if IoU(bb1, bb2) > threshold:
+            if _IoU(bb1, bb2) > threshold:
                 lst.pop(i)
             else:
                 i += 1
@@ -108,7 +139,7 @@ def average_precision(lst, targets, threshold=0.5):
         for i, target in enumerate(targets):  # search through the gt
             if idx != id2idx[target['category_id']]:
                 continue
-            iou = IoU(bbox, target['bbox'])
+            iou = _IoU(bbox, target['bbox'])
             if iou >= threshold and iou > t:
                 if det[i] == 1:
                     det[i] = 0  # match the ground-truth

@@ -69,7 +69,7 @@ class CocoDetection(Dataset):
             img = self.transform(img)
 
         if len(targets) == 0:  # maybe there's an image without a target,
-            return img, target  # and for convenient, I just skip it.
+            return img, targets  # and for convenient, I just skip it.
         
         # Rescale the bounding box together
         if 'scale' not in targets[0]:  # if is not processed
@@ -118,7 +118,7 @@ def sample_anchors(img, targets):
     Inputs:
         - img: The input image
         - targets: The ground-truth objects in the image,
-          numpy in which are transformed to scalar tensors
+          number in which are transformed to scalar tensors
     Returns:
         - ~~samples: List of sampled anchors, of length 256~~
         - ~~samples: Tensor of size 4x(9*H*W), denoting the coords of each sample,~~
@@ -129,13 +129,15 @@ def sample_anchors(img, targets):
           (1: positive, -1: negative, 0: neither)
     """
     anchors = create_anchors(img).view(4, -1)  # flatten the 4x9xHxW to 4x(9*H*W)
-    N, M = anchors.shape[1], len(targets)
-    IoUs = np.zeros((N, M))
-    for i, anchor in enumerate(anchors.t()):  # Yes, Tensor can also be "enumerate"d
-        for j, target in enumerate(targets):
-            IoUs[i,j] = IoU(anchor, target['bbox'])
+#    N, M = anchors.shape[1], len(targets)
+#    IoUs = np.zeros((N, M))
+#    for i, anchor in enumerate(anchors.t()):  # Yes, Tensor can also be "enumerate"d
+#        for j, target in enumerate(targets):
+#            IoUs[i,j] = IoU(anchor, target['bbox'])  # computing IoUs in this way cost so much time (~2s)
+    N = anchors.shape[1]
+    bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
+    IoUs = IoU(anchors, bboxes)
             
-#    samples = torch.from_numpy(np.array(anchors).T)
     samples = torch.zeros(anchors.shape)
     labels = torch.zeros(N, dtype=torch.int8)
     num_samples = 0
@@ -144,7 +146,7 @@ def sample_anchors(img, targets):
     # "with the higheset IoU overlap with a ground-truth box"
     for j in range(len(targets)):
         IoU_j = IoUs[:,j]
-        i = np.where(IoU_j == np.max(IoU_j))[0][0]
+        i = np.where(IoU_j == torch.max(IoU_j))[0][0]
         IoUs[i,j] = 0.5  # Not to be chose again
         labels[i] = 1
         samples[:,i] = parameterize(targets[j]['bbox'], anchors[:,i], torch.Tensor)
@@ -160,7 +162,7 @@ def sample_anchors(img, targets):
     for i in perms:
         if num_samples == 128:
             break  # No more than 128 positive samples
-        if np.any(IoUs[i] > 0.7):
+        if torch.any(IoUs[i] > 0.7):
             labels[i] = 1
             num_samples += 1
     
@@ -169,7 +171,7 @@ def sample_anchors(img, targets):
     for i in perms:
         if num_samples == 256:
             break  # No more than 256 samples
-        if np.all(IoUs[i] < 0.3):
+        if torch.all(IoUs[i] < 0.3):
             labels[i] = -1
             num_samples += 1
     
@@ -203,7 +205,6 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     scores = nn.functional.softmax(y_cls, dim=0)
     
     # ! Note the correspondance of y_reg and anchors
-#    anchors = torch.from_numpy(np.array(anchors))  # convert list to tensor
     coords = inv_parameterize(y_reg.squeeze().view(4, 9, ...),
                               anchors)  # corrected coords of anchors, back to input scale
     
@@ -246,7 +247,7 @@ def sample_proposals(proposals, targets, num_samples=128):
     IoUs = np.zeros((len(proposals, len(targets))))
     for i, proposal in enumerate(proposals):
         for j, target in enumerate(targets):
-            IoUs[i,j] = IoU(proposal, list(target['bbox']))
+            IoUs[i,j] = IoU(proposal, target['bbox'])
     max_IoUs = np.max(IoU, axis=1)  # Max IoU for each proposal
     
     perms = np.arange(len(proposals))
@@ -270,9 +271,9 @@ def sample_proposals(proposals, targets, num_samples=128):
         else:  # Have 128 samples already
             break
             
-    samples = torch.from_numpy(np.array(samples))
-    gt_coords = torch.from_numpy(np.array(gt_coords))
-    gt_labels = torch.from_numpy(np.array(gt_labels))
+    samples = torch.Tensor(samples)
+    gt_coords = torch.Tensor(gt_coords)
+    gt_labels = torch.LongTensor(gt_labels)
     
     return samples, gt_coords, gt_labels
             
