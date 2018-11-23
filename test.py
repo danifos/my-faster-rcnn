@@ -44,23 +44,25 @@ def check_mAP(model, loader, total_batches=0):
         proposals = create_proposals(RPN_cls, RPN_reg, x)
         RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
         N = RCNN_reg.shape[0]
+        print('Found {} proposals'.format(N))
         M = RCNN_cls.shape[1]
         RCNN_cls = nn.functional.softmax(RCNN_cls, dim=1)
         RCNN_reg = inv_parameterize(RCNN_reg.view(N,4,-1).transpose(0,1),
                                     torch.stack([proposals]*M, dim=2))
         
-        # Now works on numpy on CPU
-        RCNN_cls = RCNN_cls.detach().cpu().numpy()
-        RCNN_reg = RCNN_reg.detach().cpu().numpy()
-        lst = [None]*N  # list of predicted tuple (bbox, confidence, class idx)
+        RCNN_reg = RCNN_reg.cpu()  # move to cpu, for computation with targets
+        lst = []  # list of predicted tuple (bbox, confidence, class idx)
         for i in range(N):
-            confidence = np.max(RCNN_cls[i])
+            confidence = torch.max(RCNN_cls[i])
             idx = np.where(RCNN_cls[i] == confidence)[0][0]
-            bbox = RCNN_reg[:,i,idx]
-            lst[i] = (bbox, confidence, idx)
+            if idx != 0:  # ignore background class
+                bbox = RCNN_reg[:,i,idx]
+                lst.append((bbox, confidence, idx))
             
         results = _NMS(lst)
         AP += average_precision(results, y)
+        print('Found {} objects'.format(len(results)))
+        print('AP:', np.sum(AP[:,0]), '/', np.sum(AP[:,1]))
 
         num_batches += 1
         if num_batches == total_batches:

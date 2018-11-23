@@ -122,7 +122,7 @@ def NMS(lst, threshold=0.7):
 
 def _NMS(lst, threshold=0.7):
     """
-    Naive version of NMS() (for final prediction).
+    Naive version of NMS() (and specially for final prediction).
     Inputs:
         - lst: List of tuples of (bbox, confidence, class_idx)
     Returns:
@@ -133,18 +133,18 @@ def _NMS(lst, threshold=0.7):
     ret = []
     while lst:
         tp1 = lst.pop()
-        bb1 = tp1[0]
+        bb1, _, idx1 = tp1
         ret.append(tp1)
         i = 0
         while i < len(lst):
             tp2 = lst[i]
-            bb2 = tp2[0]
-            if _IoU(bb1, bb2) > threshold:
+            bb2, _, idx2 = tp2
+            if idx1 == idx2 and _IoU(bb1, bb2) > threshold:
                 lst.pop(i)
             else:
                 i += 1
     toc = time()
-    print('NMS 2: {:.1f}'.format(toc-tic))
+    print('NMS 2: {:.1f}s'.format(toc-tic))
 
     return ret
 
@@ -165,6 +165,7 @@ def average_precision(lst, targets, threshold=0.5):
     N = len(targets)
     det = [1]*N  # denoting whether a ground-truth is *unmatched*
     for bbox, _, idx in lst:
+        print(idx,end=',')
         if idx == 0:  # ignore the background class
             continue
         t = 0
@@ -179,9 +180,9 @@ def average_precision(lst, targets, threshold=0.5):
                     t = iou
                     flag = True  # found a TP!
         if flag:
-            ToTF[idx] += 1
+            ToTF[idx-1] += 1
         else:
-            ToTF[idx,1] += 1
+            ToTF[idx-1,1] += 1
     
     return ToTF
 

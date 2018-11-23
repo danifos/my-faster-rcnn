@@ -47,7 +47,7 @@ idx2id = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20,
           80, 81, 82, 84, 85, 86, 87, 88, 89, 90]
 id2idx = {}
 for i, d in enumerate(idx2id):
-    id2idx[d] = i
+    id2idx[d] = i+1
 
 # This is for Pascal VOC 2007
 voc_names = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
@@ -55,7 +55,7 @@ voc_names = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
              'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
 name2idx = {}
 for i, name in enumerate(voc_names):
-    name2idx[name] = i
+    name2idx[name] = i+1
 
 
 # %% Define training procedure
