@@ -13,7 +13,9 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from consts import num_classes, id2idx
+from consts import num_classes, device
+
+from time import time
 
 
 # %% Utils for bounding boxes and others
@@ -25,11 +27,11 @@ def _IoU(bb1, bb2):
     xb1, yb1 = xa1+w1, ya1+h1
     xb2, yb2 = xa2+w2, ya2+h2
 
-    xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)
-    xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)
+    xa, ya = max(xa1, xa2), max(ya1, ya2)
+    xb, yb = min(xb1, xb2), min(yb1, yb2)
 
-    w = torch.max(xb-xa, 0)
-    h = torch.max(yb-ya, 0)
+    w = max(xb-xa, 0)
+    h = max(yb-ya, 0)
     I = w*h
     U = w1*h1 + w2*h2 - I
 
@@ -86,21 +88,20 @@ def clip_box(lst, W, H):
         w = min(w, W-x)
         h = min(h, H-y)
         if x > 0 and y > 0 and w > 0 and h > 0:
-            ret.append((x, y, w, h))
+            ret.append(torch.Tensor([x, y, w, h]))
     
     return ret
 
 
-def NMS(lst, sort=False, threshold=0.7):
+def NMS(lst, threshold=0.7):
     """
+    Non-Maximum Supression for proposals.
     Input:
         - lst: List of bounding boxes with a score of each
     Returns:
-        - ret: List of the selected bounding boxes
+        - ret: Tensor of the selected bounding boxes
     """
-    if sort: lst.sort(key=lambda x:x[1])
-    else: lst.reverse()
-    
+    tic = time()
     ret = []
     while lst:
         bb1 = lst.pop()
@@ -112,7 +113,39 @@ def NMS(lst, sort=False, threshold=0.7):
                 lst.pop(i)
             else:
                 i += 1
-    
+
+    ret = torch.stack(ret, dim=1).to(device=device)
+    toc = time()
+    print('NMS 1: {:.1f}s'.format(toc-tic))
+    return ret
+
+
+def _NMS(lst, threshold=0.7):
+    """
+    Naive version of NMS() (for final prediction).
+    Inputs:
+        - lst: List of tuples of (bbox, confidence, class_idx)
+    Returns:
+        - ret: List of the same format, but suppressed.
+    """
+    tic = time()
+    lst.sort(key=lambda x:x[1])
+    ret = []
+    while lst:
+        tp1 = lst.pop()
+        bb1 = tp1[0]
+        ret.append(tp1)
+        i = 0
+        while i < len(lst):
+            tp2 = lst[i]
+            bb2 = tp2[0]
+            if _IoU(bb1, bb2) > threshold:
+                lst.pop(i)
+            else:
+                i += 1
+    toc = time()
+    print('NMS 2: {:.1f}'.format(toc-tic))
+
     return ret
 
 
@@ -137,7 +170,7 @@ def average_precision(lst, targets, threshold=0.5):
         t = 0
         flag = False
         for i, target in enumerate(targets):  # search through the gt
-            if idx != id2idx[target['category_id']]:
+            if idx != target['class_idx']:
                 continue
             iou = _IoU(bbox, target['bbox'])
             if iou >= threshold and iou > t:
@@ -241,7 +274,7 @@ def parameterize(bbox, anchor, dtype=None):
           scale as parameterization
     """
     if dtype:
-        if isinstance(bbox, list):
+        if isinstance(bbox, list) or isinstance(bbox, tuple):
             t = dtype(4)
         else:
             t = dtype(bbox.shape)
@@ -272,10 +305,10 @@ def inv_parameterize(t, anchor, dtype=None):
     """
     if dtype:
         bbox = dtype(t.shape)
-    elif isinstance(t, torch.Tensor):
-        bbox = torch.Tensor(t.shape)
-    else:
+    elif isinstance(t, list) or isinstance(t, tuple):
         bbox = [None] * len(t)
+    else:  # torch.FloatTensor or torch.cuda.FloatTensor by default
+        bbox = type(t)(t.shape).to(device=t.device)
         
     bbox[0] = t[0] * anchor[2] + anchor[0]
     bbox[1] = t[1] * anchor[3] + anchor[1]

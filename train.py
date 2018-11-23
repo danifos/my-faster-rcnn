@@ -26,6 +26,7 @@ from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
 from utility import RPN_loss, RoI_loss
 from consts import logdir, model_to_train, dtype, device
+from consts import train_data_dir, train_ann_dir, val_data_dir, val_ann_dir
 from test import check_mAP
 
 # %% Basic settings
@@ -37,12 +38,6 @@ hyper_params_dics = [
     {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]},
     {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]}
 ]
-
-# unchanged
-train_data_dir = '/home/user/coco/train2017'
-train_ann_dir = '/home/user/coco/annotations/instances_train2017.json'
-val_data_dir = '/home/user/coco/val2017'
-val_ann_dir = '/home/user/coco/annotations/instances_val2017.json'
 
 
 # %% COCO dataset

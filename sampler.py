@@ -8,6 +8,7 @@ Created on Mon Nov  5 18:56:31 2018
 
 import numpy as np
 import os
+import xml.sax
 
 import torch
 import torch.nn as nn
@@ -16,7 +17,7 @@ import torchvision.transforms as T
 from PIL import Image
 
 from utility import IoU, parameterize, inv_parameterize, clip_box, NMS
-from consts import anchor_sizes, id2idx
+from consts import anchor_sizes, id2idx, name2idx, device
         
 
 # %% CoCoDetection class
@@ -52,40 +53,127 @@ class CocoDetection(Dataset):
         targets = coco.loadAnns(ann_ids)
 
         path = coco.loadImgs(img_id)[0]['file_name']
-
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
-
-        # "Rescale the image such that the short side is s=600 pixels"
-        width, height = img.width, img.height
-        if height < width:
-            h = 600
-            w = int(h/height*width)
-        else:
-            w = 600
-            h = int(w/width*height)
-        img = T.Resize((w, h))(img)
+        targets['class_idx'] = id2idx[targets['category_id']]
         
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if len(targets) == 0:  # maybe there's an image without a target,
-            return img, targets  # and for convenient, I just skip it.
-        
-        # Rescale the bounding box together
-        if 'scale' not in targets[0]:  # if is not processed
-            scale = w/width, h/height
-            # The first target store the scale information
-            targets[0]['scale'] = scale
-            for target in targets:
-                bbox = target['bbox']
-                # Resize bounding-boxes with scale
-                for i in range(4):
-                    bbox[i] = np.array(bbox[i]*scale[i%2], dtype=np.float32)
+        img, targets = transform_image(img, targets, self.transform)
 
         return img, targets
 
     def __len__(self):
         return len(self.ids)
+
+
+# %% Pascal VOCDetection class
+
+class XMLHandler(xml.sax.ContentHandler):
+    
+    def __init__(self, targets):
+        self.targets = targets
+        self.cur = ''
+        self.depth =0
+
+    def startElement(self, tag, attr):
+        self.depth += 1
+
+        if tag == 'bndbox' and self.depth != 3: return
+        if tag == 'name' and self.cur != 'object': return
+
+        if tag == 'object':
+            self.targets.append({})
+        elif tag == 'bndbox':
+            self.targets[-1]['bbox'] = []
+
+        self.cur = tag
+
+    def endElement(self, tag):
+        self.depth -= 1
+
+        if tag == 'bndbox':
+            self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]
+            self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]
+        self.cur = ''
+    
+    def characters(self, cnt):
+        if self.cur == 'name':
+            self.targets[-1]['class_idx'] = name2idx[cnt]
+        elif self.cur in ('xmin', 'ymin', 'xmax', 'ymax') and self.depth == 4:
+            self.targets[-1]['bbox'].append(eval(cnt))
+
+
+class VOCDetection(Dataset):
+    """`Pascal VOC Detection <http://host.robots.ox.ac.uk/pascal/VOC/voc2007>`
+    Inputs:
+        - root (string): Root directory where images are downloaded to.
+        - ann (string): Path to xml annotation files.
+        - transform (callable, optional): A function/transform that  takes in an PIL image
+          and returns a transformed version. E.g, ``transforms.ToTensor``
+    """
+        
+    def __init__(self, root, ann, transform=None):
+        self.root = root
+        self.ann = ann
+        self.transform = transform
+        
+        self.images = os.listdir(root)
+        self.parser = xml.sax.make_parser()
+        self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
+
+    def __getitem__(self, index):
+        """
+        Inputs:
+            - index (int): Index
+        Returns:
+            - tuple: Tuple (image, targets).
+        """
+        path = self.images[index]
+        pre, _ = os.path.splitext(path)
+
+        targets = []
+        self.parser.setContentHandler(XMLHandler(targets))
+        self.parser.parse(os.path.join(self.ann, pre+'.xml'))
+        print(targets)
+
+        img = Image.open(os.path.join(self.root, path)).convert('RGB')
+        img, targets = transform_image(img, targets, self.transform)
+
+        return img, targets
+
+    def __len__(self):
+        return len(self.images)
+
+
+# %% Transformation of images and targets for both dataset
+
+def transform_image(img, targets, transform):
+    # "Rescale the image such that the short side is s=600 pixels"
+    width, height = img.width, img.height
+    if height < width:
+        h = 600
+        w = int(h/height*width)
+    else:
+        w = 600
+        h = int(w/width*height)
+    img = T.Resize((w, h))(img)
+    
+    if transform is not None:
+        img = transform(img)
+
+    if len(targets) == 0:  # maybe there's an image without a target,
+        return img, targets  # and for convenient, I just skip it.
+    
+    # Rescale the bounding box together
+    if 'scale' not in targets[0]:  # if is not processed
+        scale = w/width, h/height
+        # The first target store the scale information
+        targets[0]['scale'] = scale
+        for target in targets:
+            bbox = target['bbox']
+            # Resize bounding-boxes with scale
+            for i in range(4):
+                bbox[i] = np.array(bbox[i]*scale[i%2], dtype=np.float32)
+
+    return img, targets
 
 
 # %% Anchors creator and sampler (256 each)
@@ -110,7 +198,7 @@ def create_anchors(img):
         anchors[1,i] = y-size[0]
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
-    return anchors
+    return anchors.to(device=device)
 
 
 def sample_anchors(img, targets):
@@ -197,6 +285,8 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
           scale as input
           Should be of length about 2000, but I do not know if it is.
     """
+    H, W = y_cls.shape[2:]
+
     anchors = create_anchors(img)
     
     y_cls = y_cls.squeeze().view(2, -1)
@@ -205,12 +295,13 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     scores = nn.functional.softmax(y_cls, dim=0)
     
     # ! Note the correspondance of y_reg and anchors
-    coords = inv_parameterize(y_reg.squeeze().view(4, 9, ...),
+    coords = inv_parameterize(y_reg.squeeze().view(4, 9, H, W),
                               anchors)  # corrected coords of anchors, back to input scale
     
     # Find n highest proposals
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
-    lst = [coords[i] for i in indices[:num_proposals]]
+    coords = coords.view(4, -1)
+    lst = [coords[:,i] for i in indices[:num_proposals]]
     
     lst = clip_box(lst, img.shape[3], img.shape[2])
     
@@ -260,7 +351,7 @@ def sample_proposals(proposals, targets, num_samples=128):
                 samples.append(proposals[i])
                 # And parameterize the GT bbox into the output to be learned
                 gt_coords.append(parameterize(targets[i]['bbox'], proposals[i]))
-                gt_labels.append(id2idx[targets[i]['category_id']])
+                gt_labels.append(targets[i]['class_idx'])
                 num_fg_cur += 1
         elif num_bg_cur < num_bg_total:
             if 0.1 <= max_IoUs[i] < 0.5:

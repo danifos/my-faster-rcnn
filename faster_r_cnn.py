@@ -12,8 +12,8 @@ import torch
 import torch.nn as nn
 import torchvision
 
-from consts import num_classes
 from utility import clip_box
+from consts import num_classes
 
 
 # %% Utility layers
@@ -59,9 +59,9 @@ class RoIPooling(nn.Module):
         ret = [None]*N
         for i in range(N):
             roi = rois[i]
-            ret[i] = self.pool(x[:, roi[1]:roi[3]+1, roi[0]:roi[2]+1])
+            ret[i] = self.pool(x[:, roi[1]:roi[1]+roi[3]+1, roi[0]:roi[0]+roi[2]+1])
         
-        return torch.cat(ret, 0)
+        return torch.stack(ret, dim=0)
 
 
 # %% 2 main modules
@@ -95,6 +95,7 @@ class FastRCNN(nn.Module):
         self.flatten = Flatten()
         self.fc_cls = nn.Linear(4096, num_classes+1)
         self.fc_reg = nn.Linear(4096, 4*(num_classes+1))
+
     def forward(self, x, img, rois):
         """
         Inputs:
@@ -105,6 +106,7 @@ class FastRCNN(nn.Module):
               scale as after parameterization on proposals
         """
         x = self.RoIPooling(x, img, rois)
+        x = x.view(-1, 512*7*7)
         x = self.fc_head(x)
         x = self.flatten(x)
         y_cls = self.fc_cls(x)
@@ -123,9 +125,9 @@ class FasterRCNN(nn.Module):
     def __init__(self, params, pretrained=False):
         """
         Inputs:
+            - params: Dictionary of {component : filename} to load state dict
             - pretrained: Use pretrained VGG16? (False by default)
               (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
-            - params: Dictionary of {component : filename} to load state dict
         """
         super(FasterRCNN, self).__init__()
         VGG = torchvision.models.vgg16(pretrained)
