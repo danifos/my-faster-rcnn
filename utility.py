@@ -56,7 +56,7 @@ def IoU(bb1, bb2):
     xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)  # shape (N, M)
     xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)  # shape (N, M)
 
-    zeros = torch.zeros(N, M)
+    zeros = torch.zeros(N, M).to(device=device)
     w = torch.max(xb-xa, zeros)
     h = torch.max(yb-ya, zeros)
     I = w*h
@@ -67,55 +67,64 @@ def IoU(bb1, bb2):
 
 def clip_box(lst, W, H):
     """
-    Clip bounding boxes to limit them in a scale.
+    Clip bounding boxes to limit them is a scale
     
     Inputs:
-        - lst: List of bounding boxes (x, y, w, h)
+        - lst: Tensor of bounding boxes (x,y,w,h), size (4xN)
         - W: Width to be limited
         - H: Height to be limited
     Returns:
-        - ret: List of clipped bounding boxes
-          (x >= 0, y >=0, x+w <= W, y+h <= H)
+        - ret: Tensor of size (4xM), N-M are the eliminated bboxes
+          (x >= 0, y >= 0, x+w <= W, y+h <= H)
     """
-    ret = []
-    for x, y, w, h in lst:
-        if x < 0:
-            w += x
-            x = 0
-        if y < 0:
-            h += y
-            y = 0
-        w = min(w, W-x)
-        h = min(h, H-y)
-        if x > 0 and y > 0 and w > 0 and h > 0:
-            ret.append(torch.Tensor([x, y, w, h]))
+    N = lst.shape[1]
+    zeros = torch.zeros(N).to(device=device)
+    Ws = torch.ones(N).to(device=device) * W
+    Hs = torch.ones(N).to(device=device) * H
+    
+    # Clip x
+    lst[2] += lst[0] * (lst[0]<0).float()
+    lst[0] = torch.max(lst[0], zeros)
+    # Clip y
+    lst[3] += lst[1] * (lst[1]<0).float()
+    lst[1] = torch.max(lst[1], zeros)
+    # Clip w
+    lst[2] = torch.min(lst[2], Ws-lst[0])
+    # Clip h
+    lst[3] = torch.min(lst[3], Hs-lst[1])
+    
+    # Eliminate bounding boxes that have non-positive values
+    pos = torch.sum(lst>0, 0)
+    indices = torch.from_numpy(np.where(pos == 4)[0]).to(device=device)
+    ret = torch.gather(lst, 1, torch.stack([indices]*4, dim=0))
     
     return ret
 
 
 def NMS(lst, threshold=0.7):
     """
-    Non-Maximum Supression for proposals.
+    Non-Maximum Supression (vectorized) for proposals.
     Input:
-        - lst: List of bounding boxes with a score of each
+        - lst: Tensor of bounding boxes, size (4xN)
     Returns:
-        - ret: Tensor of the selected bounding boxes
+        - ret: Tensor of selected bounding boxes, size (4xM)
     """
     tic = time()
+    
+    IoUs = IoU(lst, lst)
+    N = lst.shape[1]
     ret = []
-    while lst:
-        bb1 = lst.pop()
-        ret.append(bb1)
-        i = 0
-        while i < len(lst):
-            bb2 = lst[i]
-            if _IoU(bb1, bb2) > threshold:
-                lst.pop(i)
-            else:
-                i += 1
-
-    ret = torch.stack(ret, dim=1).to(device=device)
+    det = torch.ones(N, dtype=torch.uint8).to(device=device)
+    
+    for i in range(N):
+        if det[i]:
+            ret.append(lst[:,i])
+            det &= (IoUs[i] < threshold)
+            
     toc = time()
+                    
+    ret = torch.stack(ret, dim=1).to(device=device)
+    
     print('NMS 1: {:.1f}s'.format(toc-tic))
     return ret
 

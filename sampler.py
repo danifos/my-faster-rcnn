@@ -217,11 +217,7 @@ def sample_anchors(img, targets):
           (1: positive, -1: negative, 0: neither)
     """
     anchors = create_anchors(img).view(4, -1)  # flatten the 4x9xHxW to 4x(9*H*W)
-#    N, M = anchors.shape[1], len(targets)
-#    IoUs = np.zeros((N, M))
-#    for i, anchor in enumerate(anchors.t()):  # Yes, Tensor can also be "enumerate"d
-#        for j, target in enumerate(targets):
-#            IoUs[i,j] = IoU(anchor, target['bbox'])  # computing IoUs in this way cost so much time (~2s)
+    
     N = anchors.shape[1]
     bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(anchors, bboxes)
@@ -301,7 +297,8 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     # Find n highest proposals
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     coords = coords.view(4, -1)
-    lst = [coords[:,i] for i in indices[:num_proposals]]
+    #lst = [coords[:,i] for i in indices[:num_proposals]]
+    lst = torch.gather(coords, 1, torch.stack([indices[:num_proposals]]*4, dim=0))
     
     lst = clip_box(lst, img.shape[3], img.shape[2])
     
