@@ -54,7 +54,8 @@ class CocoDetection(Dataset):
 
         path = coco.loadImgs(img_id)[0]['file_name']
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
-        targets['class_idx'] = id2idx[targets['category_id']]
+        for target in targets:
+            target['class_idx'] = id2idx[target['category_id']]
         
         img, targets = transform_image(img, targets, self.transform)
 
@@ -191,11 +192,11 @@ def create_anchors(img):
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     
     anchors = torch.Tensor(4, 9, H, W)
-    x = (torch.arange(W)*wscale).view(1, 1, 1, -1)
-    y = (torch.arange(H)*hscale).view(1, 1, -1, 1)
+    x = (torch.arange(W, dtype=torch.float32)*wscale).view(1, 1, 1, -1)
+    y = (torch.arange(H, dtype=torch.float32)*hscale).view(1, 1, -1, 1)
     for i, size in enumerate(anchor_sizes):
-        anchors[0,i] = x-size[0]
-        anchors[1,i] = y-size[0]
+        anchors[0,i] = x-size[0]/2
+        anchors[1,i] = y-size[1]/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
     return anchors.to(device=device)
@@ -220,6 +221,7 @@ def sample_anchors(img, targets):
     
     N = anchors.shape[1]
     bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
+    bboxes = bboxes.to(device=device)
     IoUs = IoU(anchors, bboxes)
             
     samples = torch.zeros(anchors.shape)
@@ -233,7 +235,7 @@ def sample_anchors(img, targets):
         i = np.where(IoU_j == torch.max(IoU_j))[0][0]
         IoUs[i,j] = 0.5  # Not to be chose again
         labels[i] = 1
-        samples[:,i] = parameterize(targets[j]['bbox'], anchors[:,i], torch.Tensor)
+        samples[:,i] = parameterize(bboxes[:,j], anchors[:,i])
         num_samples += 1
         # ! Assume that there's no more than 128 targets
     
@@ -264,7 +266,7 @@ def sample_anchors(img, targets):
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, img, num_proposals=12000):
+def create_proposals(y_cls, y_reg, img, num_proposals=6000):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -285,10 +287,10 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
 
     anchors = create_anchors(img)
     
-    y_cls = y_cls.squeeze().view(2, -1)
-    y_reg = y_reg.squeeze().view(4, -1)
+#    y_cls = y_cls.squeeze().view(2, -1)
+#    y_reg = y_reg.squeeze().view(4, -1)
     
-    scores = nn.functional.softmax(y_cls, dim=0)
+    scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
     
     # ! Note the correspondance of y_reg and anchors
     coords = inv_parameterize(y_reg.squeeze().view(4, 9, H, W),
@@ -301,6 +303,7 @@ def create_proposals(y_cls, y_reg, img, num_proposals=12000):
     lst = torch.gather(coords, 1, torch.stack([indices[:num_proposals]]*4, dim=0))
     
     lst = clip_box(lst, img.shape[3], img.shape[2])
+    print(lst.shape)
     
     return NMS(lst)
 

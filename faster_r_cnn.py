@@ -47,19 +47,18 @@ class RoIPooling(nn.Module):
         w, h = img.shape[3], img.shape[2]
         W, H = x.shape[3], x.shape[2]
         wscale, hscale = W/w, H/h  # approximately 1/16
-        rois[:,0] = rois[:,0]*wscale
-        rois[:,1] = rois[:,1]*hscale
-        rois[:,2] = rois[:,2]*wscale
-        rois[:,3] = rois[:,3]*hscale
+        roi_x = (rois[:,0]*wscale).long()
+        roi_y = (rois[:,1]*hscale).long()
+        roi_w = (rois[:,2]*wscale).long()
+        roi_h = (rois[:,3]*hscale).long()
         # Note that wscale and hscale are different from those in sampler.py
-        rois = rois.long()
         
         # Apply adaptive max pooling to every RoI respectively
         x = x.squeeze()
         ret = [None]*N
         for i in range(N):
-            roi = rois[i]
-            ret[i] = self.pool(x[:, roi[1]:roi[1]+roi[3]+1, roi[0]:roi[0]+roi[2]+1])
+            rx, ry, rw, rh = roi_x[i], roi_y[i], roi_w[i], roi_h[i]
+            ret[i] = self.pool(x[:, ry:ry+rh+1, rx:rx+rw+1])
         
         return torch.stack(ret, dim=0)
 
@@ -106,9 +105,8 @@ class FastRCNN(nn.Module):
               scale as after parameterization on proposals
         """
         x = self.RoIPooling(x, img, rois)
-        x = x.view(-1, 512*7*7)
-        x = self.fc_head(x)
         x = self.flatten(x)
+        x = self.fc_head(x)
         y_cls = self.fc_cls(x)
         y_reg = self.fc_reg(x)
         return y_cls, y_reg

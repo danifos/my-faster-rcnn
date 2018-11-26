@@ -11,12 +11,12 @@ import torch
 # %% compute the size of the 9 anchors
 
 anchor_areas = [128**2, 256**2, 512**2]
-anchor_ratios = [1/1, 2/1, 1/2]
+anchor_ratios = [1/2, 1/1, 2/1]
 anchor_sizes = []
-for area in anchor_areas:
-    for ratio in anchor_ratios:
-        width = (area/ratio)**0.5
-        anchor_sizes.append((width, width*ratio))
+for ratio in anchor_ratios:
+    for area in anchor_areas:
+        height = (area/ratio)**0.5
+        anchor_sizes.append((height*ratio, height))
         
 
 # %% consts that apply to all scripts

@@ -174,7 +174,7 @@ def average_precision(lst, targets, threshold=0.5):
     N = len(targets)
     det = [1]*N  # denoting whether a ground-truth is *unmatched*
     for bbox, _, idx in lst:
-        print(idx,end=',')
+        #print(idx, bbox)
         if idx == 0:  # ignore the background class
             continue
         t = 0
@@ -284,17 +284,19 @@ def parameterize(bbox, anchor, dtype=None):
           scale as parameterization
     """
     if dtype:
-        if isinstance(bbox, list) or isinstance(bbox, tuple):
-            t = dtype(4)
-        else:
-            t = dtype(bbox.shape)
-    elif isinstance(bbox, torch.Tensor):
-        t = torch.Tensor(bbox.shape)
-    else:
+        t = dtype(bbox.shape)
+    elif isinstance(bbox, list) or isinstance(bbox, tuple):
         t = [None] * len(bbox)
-        
-    t[0] = (bbox[0] - anchor[0]) / anchor[2]
-    t[1] = (bbox[1] - anchor[1]) / anchor[3]
+    else:  # torch.FloatTensor or torch.cuda.FloatTensor by default
+        t = type(bbox)(bbox.shape).to(device=bbox.device)
+    
+    bbox_x = bbox[0] + bbox[2]/2
+    bbox_y = bbox[1] + bbox[3]/2
+    anchor_x = anchor[0] + anchor[2]/2
+    anchor_y = anchor[1] + anchor[3]/2
+    
+    t[0] = (bbox_x - anchor_x) / anchor[2]
+    t[1] = (bbox_y - anchor_y) / anchor[3]
     t[2] = torch.log(bbox[2] / anchor[2])
     t[3] = torch.log(bbox[3] / anchor[3])
     
@@ -320,10 +322,16 @@ def inv_parameterize(t, anchor, dtype=None):
     else:  # torch.FloatTensor or torch.cuda.FloatTensor by default
         bbox = type(t)(t.shape).to(device=t.device)
         
-    bbox[0] = t[0] * anchor[2] + anchor[0]
-    bbox[1] = t[1] * anchor[3] + anchor[1]
+    anchor_x = anchor[0] + anchor[2]/2
+    anchor_y = anchor[1] + anchor[3]/2
+    
+    bbox_x = t[0] * anchor[2] + anchor_x
+    bbox_y = t[1] * anchor[3] + anchor_y
     bbox[2] = torch.exp(t[2]) * anchor[2]
     bbox[3] = torch.exp(t[3]) * anchor[3]
+    
+    bbox[0] = bbox_x - bbox[2]/2
+    bbox[1] = bbox_y - bbox[3]/2
     
     return bbox
 
