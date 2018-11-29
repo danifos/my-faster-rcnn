@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from consts import num_classes, device
+from consts import num_classes, device, Tensor
 
 from time import time
 
@@ -56,7 +56,7 @@ def IoU(bb1, bb2):
     xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)  # shape (N, M)
     xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)  # shape (N, M)
 
-    zeros = torch.zeros(N, M).to(device=device)
+    zeros = torch.zeros(N, M, device=device)
     w = torch.max(xb-xa, zeros)
     h = torch.max(yb-ya, zeros)
     I = w*h
@@ -78,11 +78,11 @@ def clip_box(lst, W, H):
           (x >= 0, y >= 0, x+w <= W, y+h <= H)
     """
     N = lst.shape[1]
-    zeros = torch.zeros(N).to(device=device)
-    Ws = torch.ones(N).to(device=device) * W
-    Hs = torch.ones(N).to(device=device) * H
+    zeros = torch.zeros(N, device=device)
+    Ws = torch.ones(N, device=device) * W
+    Hs = torch.ones(N, device=device) * H
     
-    print(lst)
+    #print(lst)
     
     # Clip x
     lst[2] = lst[2] + lst[0] * (lst[0]<0).float()
@@ -138,26 +138,20 @@ def NMS(coords, scores, threshold=0.7):
     Returns:
         - ret: Tensor of selected bounding boxes, size (4xM)
     """
-    tic = time()
-    
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     lst = coords[:, indices]
-    print(lst.shape)
+    #print(lst.shape)
     IoUs = IoU(lst, lst)
     N = lst.shape[1]
     ret = []
-    det = torch.ones(N, dtype=torch.uint8).to(device=device)
+    det = torch.ones(N, dtype=torch.uint8, device=device)
     
     for i in range(N):
         if det[i]:
             ret.append(lst[:,i])
             det &= (IoUs[i] < threshold)
-            
-    toc = time()
                     
-    ret = torch.stack(ret, dim=1).to(device=device)
-    
-    print('NMS 1: {:.1f}s'.format(toc-tic))
+    ret = torch.stack(ret, dim=1)
     return ret
 
 
@@ -169,7 +163,6 @@ def _NMS(lst, threshold=0.7):
     Returns:
         - ret: List of the same format, but suppressed.
     """
-    tic = time()
     lst.sort(key=lambda x:x[1])
     ret = []
     while lst:
@@ -184,8 +177,6 @@ def _NMS(lst, threshold=0.7):
                 lst.pop(i)
             else:
                 i += 1
-    toc = time()
-    print('NMS 2: {:.1f}s'.format(toc-tic))
 
     return ret
 
@@ -317,10 +308,8 @@ def parameterize(bbox, anchor, dtype=None):
     """
     if dtype:
         t = dtype(bbox.shape)
-    elif isinstance(bbox, list) or isinstance(bbox, tuple):
-        t = [None] * len(bbox)
-    else:  # torch.FloatTensor or torch.cuda.FloatTensor by default
-        t = type(bbox)(bbox.shape).to(device=bbox.device)
+    else:  # torch.cuda.FloatTensor by default
+        t = Tensor(bbox.shape)
     
     bbox_x = bbox[0] + bbox[2]/2
     bbox_y = bbox[1] + bbox[3]/2
@@ -349,10 +338,8 @@ def inv_parameterize(t, anchor, dtype=None):
     """
     if dtype:
         bbox = dtype(t.shape)
-    elif isinstance(t, list) or isinstance(t, tuple):
-        bbox = [None] * len(t)
-    else:  # torch.FloatTensor or torch.cuda.FloatTensor by default
-        bbox = type(t)(t.shape).to(device=t.device)
+    else:  # torch.cuda.FloatTensor by default
+        bbox = Tensor(t.shape)
         
     anchor_x = anchor[0] + anchor[2]/2
     anchor_y = anchor[1] + anchor[3]/2

@@ -9,6 +9,7 @@ Created on Mon Nov  5 18:56:31 2018
 import numpy as np
 import os
 import xml.sax
+from time import time
 
 import torch
 import torch.nn as nn
@@ -17,7 +18,10 @@ import torchvision.transforms as T
 from PIL import Image
 
 from utility import IoU, parameterize, inv_parameterize, clip_box, remove_cross_boundary, NMS
-from consts import anchor_sizes, num_anchors, id2idx, name2idx, dtype, device
+from consts import anchor_sizes, num_anchors, id2idx, name2idx
+from consts import Tensor, LongTensor, dtype, device
+
+import line_profiler
         
 
 # %% CoCoDetection class
@@ -190,16 +194,16 @@ def create_anchors(img):
     W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     
-    anchors = torch.Tensor(4, num_anchors, H, W)
-    x = (torch.arange(W, dtype=torch.float32)*wscale).view(1, 1, 1, -1)
-    y = (torch.arange(H, dtype=torch.float32)*hscale).view(1, 1, -1, 1)
+    anchors = Tensor(4, num_anchors, H, W)
+    x = (torch.arange(W, dtype=torch.float32, device=device)*wscale).view(1, 1, 1, -1)
+    y = (torch.arange(H, dtype=torch.float32, device=device)*hscale).view(1, 1, -1, 1)
     for i, size in enumerate(anchor_sizes):
         anchors[0,i] = x-size[0]/2
         anchors[1,i] = y-size[1]/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
     
-    return anchors.to(device=device)
+    return anchors
 
 
 def sample_anchors(img, targets):
@@ -217,12 +221,11 @@ def sample_anchors(img, targets):
     anchors = create_anchors(img).view(4, -1)  # flatten the 4xAxHxW to 4x(A*H*W)
     
     N = anchors.shape[1]
-    bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
-    bboxes = bboxes.to(device=device)
+    bboxes = Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(anchors, bboxes)
             
-    samples = torch.zeros(anchors.shape).to(device=device)
-    labels = torch.zeros(N, dtype=torch.long).to(device=device)
+    samples = torch.zeros(anchors.shape, device=device)
+    labels = torch.zeros(N, dtype=torch.long, device=device)
     num_samples = 0
     
     # Find the anchor as a positive sample
@@ -240,12 +243,15 @@ def sample_anchors(img, targets):
     perms = np.arange(N)
     np.random.shuffle(perms)
     
+    IoUs_p = torch.any(IoUs > 0.7, dim=1)
+    IoUs_n = torch.any(IoUs < 0.3, dim=1)
+    
     # Find the anchor as a positive sample
     # "that has an IoU overlap over 0.7 with any ground-truth box"
     for i in perms:
         if num_samples == 128:
             break  # No more than 128 positive samples
-        if torch.any(IoUs[i] > 0.7):
+        if IoUs_p[i]:
             labels[i] = 1
             num_samples += 1
     
@@ -254,7 +260,7 @@ def sample_anchors(img, targets):
     for i in perms:
         if num_samples == 256:
             break  # No more than 256 samples
-        if torch.all(IoUs[i] < 0.3):
+        if IoUs_n[i]:
             labels[i] = -1
             num_samples += 1
     
@@ -345,8 +351,7 @@ def sample_proposals(proposals, targets, num_samples=128):
 #        for j, target in enumerate(targets):
 #            _IoUs[i,j] = _IoU(proposal.detach().cpu().numpy(), target['bbox'])
 #    max_IoUs = np.max(_IoUs, axis=1)  # Max IoU for each proposal
-    bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
-    bboxes = bboxes.to(device=device)
+    bboxes = Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(proposals, bboxes)
     max_IoUs = torch.max(IoUs, dim=1)[0]  # Max IoU for each proposal
     
@@ -354,8 +359,8 @@ def sample_proposals(proposals, targets, num_samples=128):
     perms = np.arange(N)
     np.random.shuffle(perms)
     
-    none = torch.Tensor(4).to(device=device)
-    zero = torch.LongTensor([0]).to(device=device)
+    none = Tensor(4)
+    zero = LongTensor([0])
     for i in perms:
         if num_fg_cur < num_fg_total:
             if max_IoUs[i] >= 0.5:
@@ -367,7 +372,7 @@ def sample_proposals(proposals, targets, num_samples=128):
                 gt_labels.append(targets[j]['class_idx'].to(device=device))
                 num_fg_cur += 1
         if num_bg_cur < num_bg_total:
-            if 0.1 <= max_IoUs[i] <  0.5:  # ! The 0 should be 0.1 in final version
+            if 0 <= max_IoUs[i] <  0.5:  # ! The 0 should be 0.1 in final version
                 samples.append(proposals[:,i])
                 gt_coords.append(none)  # No need for the ground-truth coords
                 gt_labels.append(zero)  # 0 for the background class
@@ -379,9 +384,9 @@ def sample_proposals(proposals, targets, num_samples=128):
     gt_coords = torch.stack(gt_coords, dim=0)
     gt_labels = torch.cat(gt_labels, dim=0)
     print()
-    print(samples.shape, samples.dtype, samples.device)
-    print(gt_coords.shape, gt_coords.dtype, gt_coords.device)
-    print(gt_labels.shape, gt_labels.dtype, gt_labels.device)
+#    print(samples.shape, samples.dtype, samples.device)
+#    print(gt_coords.shape, gt_coords.dtype, gt_coords.device)
+#    print(gt_labels.shape, gt_labels.dtype, gt_labels.device)
     
     return samples, gt_coords, gt_labels
             

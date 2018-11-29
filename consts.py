@@ -10,8 +10,8 @@ import torch
 
 # %% compute the size of the 9 anchors
 
-anchor_areas = [64**2, 128**2, 256**2, 512**2]
-anchor_ratios = [1/2, 1/1, 2/1]
+anchor_areas = [128**2]
+anchor_ratios = [1/1]
 anchor_sizes = []
 for ratio in anchor_ratios:
     for area in anchor_areas:
@@ -67,6 +67,8 @@ model_to_train = [[1, 1, 0],
 
 
 # %% Basic data type
-ttype = torch.cuda.FloatTensor # use GPU
 dtype = torch.float32
+# use GPU
+Tensor = torch.cuda.FloatTensor
+LongTensor = torch.cuda.LongTensor
 device = torch.device('cuda')

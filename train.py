@@ -29,6 +29,11 @@ from consts import logdir, model_to_train, dtype, device
 from consts import train_data_dir, train_ann_dir, val_data_dir, val_ann_dir
 from test import check_mAP
 
+# %% A test of sample_anchors
+#from line_profiler import LineProfiler
+#lp = LineProfiler()
+#sample_anchors = lp(sample_anchors) 
+
 # %% Basic settings
 
 # changed
@@ -173,7 +178,7 @@ def get_optimizer():
 
 def train(print_every=100, check_every=10000):
     # ===================  Preparations for debugging  ========================
-#    tic = time()
+    tic = time()
 #    import gc
 #    fo = open('log.txt', 'w')
     # =========================================================================
@@ -189,9 +194,9 @@ def train(print_every=100, check_every=10000):
             model.train()  # put model to train mode
             
             # ==========================  Debug  ==============================
-#            toc = time()
-#            print('Use time: {:.2f}s'.format(toc-tic))
-#            tic = toc
+            toc = time()
+            print('Use time: {:.2f}s'.format(toc-tic))
+            tic = toc
 #            print(file=fo)
 #            numel = 0
 #            for obj in gc.get_objects():
@@ -202,6 +207,7 @@ def train(print_every=100, check_every=10000):
             # =================================================================
             
             loss = train_step(x, y, optimizer)
+            print('-- loss = {:.4f}'.format(loss))
             
             loss_summary['train'].append((step, loss))
             save_summary()
