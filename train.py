@@ -32,12 +32,10 @@ from test import check_mAP
 # %% Basic settings
 
 # changed
-hyper_params_dics = [
-    {'num_epochs':1, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
-    {'num_epochs':1, 'learning_rate':1e-3, 'weight_decay':5e-5, 'decay_epochs':[5]},
-    {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]},
-    {'num_epochs':1, 'learning_rate':1e-4, 'weight_decay':5e-5, 'decay_epochs':[]}
-]
+num_epochs = 2
+learning_rate = 3e-3
+weight_decay = 5e-5
+decay_epochs = [0]
 
 
 # %% COCO dataset
@@ -66,10 +64,6 @@ def init():
     """
     Initialize the model, epoch and step, loss and mAP summary, hyper-parameters.
     """
-    global stage
-    global num_epochs, learning_rate, weight_decay, decay_epochs
-    
-    stage = 0
     files = None
     summary_dic = None
     
@@ -77,30 +71,15 @@ def init():
         if cur == os.path.join('.', logdir):  # we've found it
             # open the summary file, get the stage number
             with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
-                dic = pickle.load(fo, encoding='bytes')
-                stage = dic['stage']
-            
-            # open the summary file for the stage only
-            with open(os.path.join(logdir, 'summary-{}.pkl'.format(stage)), 'rb') as fo:
                 summary_dic = pickle.load(fo, encoding='bytes')
             
             break
         
     else:  # there's not, make one
         os.mkdir(logdir)
-        # And we start from stage 0
-        save_stage()
     
     files_dic = search_files(files)
     stage_init(summary_dic, files_dic)
-    
-    # Initialize the hyper-parameters basing on the current stage
-    
-    params_dic = hyper_params_dics[stage]
-    num_epochs = params_dic['num_epochs']
-    learning_rate = params_dic['learning_rate']
-    weight_decay = params_dic['weight_decay']
-    decay_epochs = params_dic['decay_epochs']
 
 
 def search_files(files):
@@ -108,7 +87,7 @@ def search_files(files):
     Inputs:
         - files: filenames in the current logdir
     Returns:
-        - Dic with the format {(comp, stage) : {'filename':..., 'epoch':..., 'step':...}}
+        - Dic with the format {'filename':..., 'epoch':..., 'step':...}
     """
     dic = {}
     # find the latest checkpoint files for each presisting stage (.pkl)
@@ -116,20 +95,19 @@ def search_files(files):
     for ckpt in files:
         if not (ckpt.startswith(prefix) and ckpt.endswith(suffix)): continue
         info = ckpt[ckpt.find(prefix)+len(prefix) : ckpt.rfind(suffix)]
-        c, t, e, s= [int(i)+1 for i in info.split('-')]
+        e, s = [int(i)+1 for i in info.split('-')]
         
         flag = False
-        if (c, t) in dic:
-            subdic = dic[(c, t)]
-            if e > subdic['epoch'] or e == subdic['epoch'] and s > subdic['step']:
+        if dic:
+            if e > dic['epoch'] or e == dic['epoch'] and s > dic['step']:
                 flag = True
         else:
             flag = True
         
         if flag:
-            subdic['filename'] = os.path.join(logdir, ckpt)
-            subdic['epoch'] = e
-            subdic['step'] = s
+            dic['filename'] = os.path.join(logdir, ckpt)
+            dic['epoch'] = e
+            dic['step'] = s
     
     return dic
 
@@ -138,57 +116,30 @@ def stage_init(summary_dic, files_dic):
     global model, epoch, step
     global loss_summary, map_summary
     
-    # Are we resuming a stage?
-    for i in range(3):  # 3 is the number of submodules of model
-        if(i, stage) in files_dic:
-            resume = True
-            break
-    else:
-        resume = False
-    
     # Load summary
-    if resume:
-        if stage == 3:
-            map_summary = summary_dic['map']
+    if summary_dic:
         loss_summary = summary_dic['loss']
+        map_summary = summary_dic['map']
     else:
-        if stage == 3:
-            map_summary = {'train':[], 'val':[]}
         loss_summary = {'train':[], 'val':[]}
+        map_summary = {'train':[], 'val':[]}
     
     # Load model
     model = None
     params = {}
-    if stage < 2:  # the first 2 stages
-        pretrained = True
-    else:
-        pretrained = False
     
-    if resume:
-        # Load some checkpoint files from the current stage (if any)
-        for idx, flag in enumerate(model_to_train[stage]):
-            if flag:
-                subdic = files_dic[(idx, stage)]
-                params[idx] = subdic['filename']
-                epoch = subdic['epoch']
-                step = subdic['step']
+    if files_dic:
+        # Load some checkpoint files (if any)
+        params = files_dic['filename']
+        epoch = files_dic['epoch']
+        step = files_dic['step']
     else:
         # Otherwise these components will be initialized randomly
         # And epoch and step will be set to 0
         epoch = 0
         step = 0
     
-    # For certain stages, we also load checkpoint files of the previous stages
-    if stage == 2:
-        params[0] = files_dic[(0, 1)]['filename']  # load CNN of stage 1
-        if 1 not in params:
-            params[1] = files_dic[(1, 0)]['filename']  # load RPN of stage 0
-    elif stage == 3:
-        params[0] = files_dic[(0, 1)]['filename']  # load CNN of stage 1
-        if 2 not in params:
-            params[2] = files_dic[(2, 2)]['filename']  # load RCNN of stage 2
-    
-    model = FasterRCNN(params, pretrained)
+    model = FasterRCNN(params)
         
     # move to GPU
     model = model.to(device=device)
@@ -197,49 +148,36 @@ def stage_init(summary_dic, files_dic):
 # %% Save
 
 def save_model():
-    for idx, flag in enumerate(model_to_train[stage]):
-        if flag:
-            filename = os.path.join(logdir,
-                'param-{}-{}-{}-{}.pkl'.format(idx, stage, epoch, step))
-            torch.save(model.submodules[idx].state_dict(), filename)
+    filename = os.path.join(logdir, 'param-{}-{}.pth'.format(epoch, step))
+    torch.save(model.state_dict(), filename)
         
     print('Saved model successfully')
     print('Next epoch will start 60s later')
     sleep(60)
 
 
-def save_stage():
-    file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
-    pickle.dump({'stage':stage}, file)
-    file.close()
-
-
 def save_summary():
-    file = open(os.path.join(logdir, 'summary-{}.pkl'.format(stage)), 'wb')
-    if stage == 3:
-        pickle.dump({'loss':loss_summary, 'map':map_summary}, file)
-    else:
-        pickle.dump({'loss':loss_summary}, file)
+    file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
+    pickle.dump({'loss':loss_summary, 'map':map_summary}, file)
     file.close()
 
 
 # %% Training procedure
 
 def get_optimizer():
-    params = []
-    for i, c in enumerate(model_to_train[stage]):
-        if c:
-            params.append({'params': model.submodules[i].parameters()})
-    return optim.SGD(params,
+    return optim.SGD(model.parameters(),
                      lr=learning_rate,
                      momentum=0.9,
                      weight_decay=weight_decay)
 
 
-def train(print_every=100):
+def train(print_every=100, check_every=10000):
+    # ===================  Preparations for debugging  ========================
+#    tic = time()
+#    import gc
+#    fo = open('log.txt', 'w')
+    # =========================================================================
     global model, epoch, step, learning_rate
-    
-    tic = time()
     
     optimizer = get_optimizer()
     
@@ -249,57 +187,41 @@ def train(print_every=100):
         for x, y in loader_train:  # an image and its targets
             if len(y) == 0: continue  # no target in this image
             model.train()  # put model to train mode
-            x = x.to(device=device, dtype=dtype)
             
-            loss = None
+            # ==========================  Debug  ==============================
+#            toc = time()
+#            print('Use time: {:.2f}s'.format(toc-tic))
+#            tic = toc
+#            print(file=fo)
+#            numel = 0
+#            for obj in gc.get_objects():
+#                if torch.is_tensor(obj):
+#                    numel += obj.numel()
+#                    #print(type(obj), obj.size(), file=fo)
+#            print(numel, file=fo, end='')
+            # =================================================================
             
-            features = model.CNN(x)  # extract features from x
-            # Get 1x(2*9)xHxW classification scores,
-            # and 1x(4*9)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
-            RPN_cls, RPN_reg = model.RPN(features)
-            # stage 0, 2: train RPN; stage 1, 3: train Fast R-CNN
-            if stage == 0 or stage == 2:
-                # Sample 256 anchors
-                samples, labels = sample_anchors(x, y)
-                samples = samples.to(device=device, dtype=dtype)
-                labels = labels.to(device=device, dtype=torch.long)
-                # Compute RPN loss
-                loss = RPN_loss(RPN_cls, labels, RPN_reg, samples)
-            else:
-                # Create about 2000 region proposals
-                proposals = create_proposals(RPN_cls, RPN_reg, x)
-                # Sample 128 proposals
-                samples, gt_coords, gt_labels = sample_proposals(proposals, y)
-                # Get Nx81 classification scores
-                # and Nx324 regression coordinates of Fast R-CNN
-                RCNN_cls, RCNN_reg = model.RCNN(features, x, samples)
-                # Compute RoI loss
-                loss = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords)
+            loss = train_step(x, y, optimizer)
             
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            loss_summary['train'].append((step, loss.item()))
+            loss_summary['train'].append((step, loss))
             save_summary()
             
             if step % print_every == 0:
                 print('-- Iteration {it}, loss = {loss:.4f}'.format(
-                        it=step,loss=loss.item()), end=', ')
+                        it=step,loss=loss))
+                save_summary()
+            
+            if step > 0 and step % check_every == 0:
+                # evaluate the mAP
+                train_mAP = check_mAP(model, loader_train, 100)
+                map_summary['train'].append((step, train_mAP))
+                print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
                 
-                # For those stage that trains RoI loss, evaluate the mAP
-                if stage == 1 or stage == 3:
-                    train_mAP = check_mAP(model, loader_train, 100)
-                    map_summary['train'].append((step, train_mAP))
-                    print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
-                    
-                    val_mAP = check_mAP(model, loader_val, 100)
-                    map_summary['val']
-                    print('val mAP = {:.1f}'.format(100 * val_mAP))
-                    
-                    save_summary()
-                else:
-                    print()
+                val_mAP = check_mAP(model, loader_val, 100)
+                map_summary['val']
+                print('val mAP = {:.1f}'.format(100 * val_mAP))
+                
+                save_summary()
                 
             step += 1
         
@@ -310,26 +232,53 @@ def train(print_every=100):
             epoch = e+1
             learning_rate /= 10
             return False
-        
-    toc = time()
-    print('Use time: {}s'.format(toc-tic))
     
     return True
+
+
+def train_step(x, y, optimizer):
+    x = x.to(device=device, dtype=dtype)
+    
+    loss = None
+    
+    features = model.CNN(x)  # extract features from x
+    # Get 1x(2*A)xHxW classification scores,
+    # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
+    RPN_cls, RPN_reg = model.RPN(features)
+    
+    # Sample 256 anchors
+    anchor_samples, labels = sample_anchors(x, y)
+    # Compute RPN loss
+    rpn_loss = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
+    
+    # Create about 2000 region proposals
+    proposals = create_proposals(RPN_cls, RPN_reg, x, training=True)
+    # Sample 128 proposals
+    proposal_samples, gt_coords, gt_labels = sample_proposals(proposals, y)
+    # Get Nx81 classification scores
+    # and Nx324 regression coordinates of Fast R-CNN
+    RCNN_cls, RCNN_reg = model.RCNN(features, x, proposal_samples)
+    # Compute RoI loss, has in-place error if do not use detach()
+    roi_loss = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
+    
+    loss = rpn_loss + roi_loss
+    
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    
+    return loss.item()
 
 
 # %% Main
 
 def main():
-    global stage
-    
-    stage = 0
-    while(stage <= 3):
+    while True:
         init()
-        
         if(train()): break
-        stage += 1
-        save_stage()
 
 
 if __name__ == '__main__':
-    main()
+    import cProfile
+    import re
+    cProfile.run('main()', 'profile.txt')

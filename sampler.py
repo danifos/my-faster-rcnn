@@ -16,8 +16,8 @@ from torch.utils.data import Dataset
 import torchvision.transforms as T
 from PIL import Image
 
-from utility import IoU, parameterize, inv_parameterize, clip_box, NMS
-from consts import anchor_sizes, id2idx, name2idx, device
+from utility import IoU, parameterize, inv_parameterize, clip_box, remove_cross_boundary, NMS
+from consts import anchor_sizes, num_anchors, id2idx, name2idx, dtype, device
         
 
 # %% CoCoDetection class
@@ -184,14 +184,13 @@ def create_anchors(img):
     Inputs:
         - img: The input image
     Returns:
-        - ~~List of anchors of length 9*H*W, scale as input~~
-        - Tensor of anchors of size 4x9xHxW, scale as input
+        - Tensor of anchors of size 4xAxHxW, scale as input
     """
     w, h = img.shape[3], img.shape[2]
     W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     
-    anchors = torch.Tensor(4, 9, H, W)
+    anchors = torch.Tensor(4, num_anchors, H, W)
     x = (torch.arange(W, dtype=torch.float32)*wscale).view(1, 1, 1, -1)
     y = (torch.arange(H, dtype=torch.float32)*hscale).view(1, 1, -1, 1)
     for i, size in enumerate(anchor_sizes):
@@ -199,6 +198,7 @@ def create_anchors(img):
         anchors[1,i] = y-size[1]/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
+    
     return anchors.to(device=device)
 
 
@@ -209,23 +209,20 @@ def sample_anchors(img, targets):
         - targets: The ground-truth objects in the image,
           number in which are transformed to scalar tensors
     Returns:
-        - ~~samples: List of sampled anchors, of length 256~~
-        - ~~samples: Tensor of size 4x(9*H*W), denoting the coords of each sample,~~
-        - samples: Tensor of size 4x9xHxW, denoting the coords of each sample,
+        - samples: Tensor of size 4xAxHxW, denoting the coords of each sample,
           scale as parameterization on anchors
-        - ~~labels: List of corresponding labels for the anchors, of length 256~~
-        - labels: CharTensor of size (9*H*W), denoting the label of each sample
+        - labels: CharTensor of size (A*H*W), denoting the label of each sample
           (1: positive, -1: negative, 0: neither)
     """
-    anchors = create_anchors(img).view(4, -1)  # flatten the 4x9xHxW to 4x(9*H*W)
+    anchors = create_anchors(img).view(4, -1)  # flatten the 4xAxHxW to 4x(A*H*W)
     
     N = anchors.shape[1]
     bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
     bboxes = bboxes.to(device=device)
     IoUs = IoU(anchors, bboxes)
             
-    samples = torch.zeros(anchors.shape)
-    labels = torch.zeros(N, dtype=torch.int8)
+    samples = torch.zeros(anchors.shape).to(device=device)
+    labels = torch.zeros(N, dtype=torch.long).to(device=device)
     num_samples = 0
     
     # Find the anchor as a positive sample
@@ -266,7 +263,7 @@ def sample_anchors(img, targets):
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, img, num_proposals=6000):
+def create_proposals(y_cls, y_reg, img, training=False, num_proposals=2000):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -276,12 +273,13 @@ def create_proposals(y_cls, y_reg, img, num_proposals=6000):
           (! Note that I only implement the case that batch_size=1)
         - y_reg: Regression coodinates output by RPN, of size 1x36xHxW,
           scale as parameterization on anchors (obviously)
-        - ~~anchors: List of anchors (x, y, w, h), of length 9*H*W~~
         - img: The input image
+        - training: Create proposals for training or testing, default by False.
+          Ignore the cross-boundary anchors if True,
+          which will remove about 2/3 of the anchors.
     Returns:
         - List of proposals that will be fed into the Fast R-CNN.
-          scale as input
-          Should be of length about 2000, but I do not know if it is.
+          scale as input. Should be of length 2000
     """
     H, W = y_cls.shape[2:]
 
@@ -293,19 +291,25 @@ def create_proposals(y_cls, y_reg, img, num_proposals=6000):
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
     
     # ! Note the correspondance of y_reg and anchors
-    coords = inv_parameterize(y_reg.squeeze().view(4, 9, H, W),
+    coords = inv_parameterize(y_reg.squeeze().view(4, num_anchors, H, W),
                               anchors)  # corrected coords of anchors, back to input scale
     
-    # Find n highest proposals
-    _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     coords = coords.view(4, -1)
-    #lst = [coords[:,i] for i in indices[:num_proposals]]
-    lst = torch.gather(coords, 1, torch.stack([indices[:num_proposals]]*4, dim=0))
+    anchors = anchors.view(4, -1)
+    if training:  # ignore cross-boundray anchors and their coords and scores
+        scores, coords = remove_cross_boundary(anchors,
+                                               img.shape[3], img.shape[2],
+                                               scores, coords)
+    del anchors
     
-    lst = clip_box(lst, img.shape[3], img.shape[2])
-    print(lst.shape)
+    # Non-maximum suppression
+    coords = NMS(coords, scores)
+    coords = clip_box(coords, img.shape[3], img.shape[2])
     
-    return NMS(lst)
+    # Find n highest proposals
+    lst = coords[:, :num_proposals]
+    
+    return lst
 
 
 def sample_proposals(proposals, targets, num_samples=128):
@@ -335,36 +339,49 @@ def sample_proposals(proposals, targets, num_samples=128):
     num_bg_total = num_samples-num_fg_total
     
     # Compute IoU
-    IoUs = np.zeros((len(proposals, len(targets))))
-    for i, proposal in enumerate(proposals):
-        for j, target in enumerate(targets):
-            IoUs[i,j] = IoU(proposal, target['bbox'])
-    max_IoUs = np.max(IoU, axis=1)  # Max IoU for each proposal
+#    from utility import _IoU
+#    _IoUs = np.zeros((proposals.shape[1], len(targets)))
+#    for i, proposal in enumerate(proposals.t()):
+#        for j, target in enumerate(targets):
+#            _IoUs[i,j] = _IoU(proposal.detach().cpu().numpy(), target['bbox'])
+#    max_IoUs = np.max(_IoUs, axis=1)  # Max IoU for each proposal
+    bboxes = torch.Tensor([target['bbox'] for target in targets]).t()
+    bboxes = bboxes.to(device=device)
+    IoUs = IoU(proposals, bboxes)
+    max_IoUs = torch.max(IoUs, dim=1)[0]  # Max IoU for each proposal
     
-    perms = np.arange(len(proposals))
+    N = proposals.shape[1]
+    perms = np.arange(N)
     np.random.shuffle(perms)
     
+    none = torch.Tensor(4).to(device=device)
+    zero = torch.LongTensor([0]).to(device=device)
     for i in perms:
         if num_fg_cur < num_fg_total:
             if max_IoUs[i] >= 0.5:
-                j = np.where(IoU[i] == max_IoUs[i])[0][0]  # Max responsed gt
-                samples.append(proposals[i])
+                j = np.where(IoUs[i] == max_IoUs[i])[0][0]  # Max responsed gt
+                print(j, end=' ')
+                samples.append(proposals[:,i])
                 # And parameterize the GT bbox into the output to be learned
-                gt_coords.append(parameterize(targets[i]['bbox'], proposals[i]))
-                gt_labels.append(targets[i]['class_idx'])
+                gt_coords.append(parameterize(bboxes[:,j], proposals[:,i]))
+                gt_labels.append(targets[j]['class_idx'].to(device=device))
                 num_fg_cur += 1
-        elif num_bg_cur < num_bg_total:
-            if 0.1 <= max_IoUs[i] < 0.5:
-                samples.append(proposals[i])
-                gt_coords.append(None)  # No need for the ground-truth coords
-                gt_labels.append(0)  # 0 for the background class
+        if num_bg_cur < num_bg_total:
+            if 0.1 <= max_IoUs[i] <  0.5:  # ! The 0 should be 0.1 in final version
+                samples.append(proposals[:,i])
+                gt_coords.append(none)  # No need for the ground-truth coords
+                gt_labels.append(zero)  # 0 for the background class
                 num_bg_cur += 1
         else:  # Have 128 samples already
             break
-            
-    samples = torch.Tensor(samples)
-    gt_coords = torch.Tensor(gt_coords)
-    gt_labels = torch.LongTensor(gt_labels)
+        
+    samples = torch.stack(samples, dim=0)
+    gt_coords = torch.stack(gt_coords, dim=0)
+    gt_labels = torch.cat(gt_labels, dim=0)
+    print()
+    print(samples.shape, samples.dtype, samples.device)
+    print(gt_coords.shape, gt_coords.dtype, gt_coords.device)
+    print(gt_labels.shape, gt_labels.dtype, gt_labels.device)
     
     return samples, gt_coords, gt_labels
             

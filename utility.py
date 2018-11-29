@@ -82,11 +82,13 @@ def clip_box(lst, W, H):
     Ws = torch.ones(N).to(device=device) * W
     Hs = torch.ones(N).to(device=device) * H
     
+    print(lst)
+    
     # Clip x
-    lst[2] += lst[0] * (lst[0]<0).float()
+    lst[2] = lst[2] + lst[0] * (lst[0]<0).float()
     lst[0] = torch.max(lst[0], zeros)
     # Clip y
-    lst[3] += lst[1] * (lst[1]<0).float()
+    lst[3] = lst[3] + lst[1] * (lst[1]<0).float()
     lst[1] = torch.max(lst[1], zeros)
     # Clip w
     lst[2] = torch.min(lst[2], Ws-lst[0])
@@ -96,21 +98,51 @@ def clip_box(lst, W, H):
     # Eliminate bounding boxes that have non-positive values
     pos = torch.sum(lst>0, 0)
     indices = torch.from_numpy(np.where(pos == 4)[0]).to(device=device)
-    ret = torch.gather(lst, 1, torch.stack([indices]*4, dim=0))
+    indices = indices.unsqueeze(0).expand(4, indices.shape[0])
+    ret = torch.gather(lst, 1, indices)
     
     return ret
 
 
-def NMS(lst, threshold=0.7):
+def remove_cross_boundary(lst, W, H, *args):
+    """
+    Ignore the cross-boundary anchors,
+    as well as their corresponding coordinates and scores.
+    
+    Inputs:
+        - lst, W, H: Same as clip_box()
+        - args: Other tensors to be suppressed together with the anchors
+    Returns:
+        - rets: Tensors corresponding to args
+    """
+    
+    x, y, w, h = lst
+    in_boundary = (x >= 0) & (y >= 0) & (x+w <= W) & (y+h <= H)
+    indices = torch.from_numpy(np.where(in_boundary)[0]).to(device=device)
+    M = indices.shape[0]
+    indices = indices.unsqueeze(0)
+    
+    rets = []
+    for arg in args:
+        rets.append(torch.gather(arg, 1, indices.expand(arg.shape[0], M)))
+    
+    return rets
+
+
+def NMS(coords, scores, threshold=0.7):
     """
     Non-Maximum Supression (vectorized) for proposals.
     Input:
-        - lst: Tensor of bounding boxes, size (4xN)
+        - coords: Tensor of bounding boxes, size (4xN)
+        - scores: Tensor of their scores, size (2xN)
     Returns:
         - ret: Tensor of selected bounding boxes, size (4xM)
     """
     tic = time()
     
+    _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
+    lst = coords[:, indices]
+    print(lst.shape)
     IoUs = IoU(lst, lst)
     N = lst.shape[1]
     ret = []
@@ -234,7 +266,7 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
     N_reg = p.shape[1]
     loss = nn.functional.cross_entropy(p.t(), torch.abs(p_s), reduction='none') / N_cls \
          + lbd * ((p_s+1)/2).float() * smooth_L1(t - t_s) / N_reg
-    loss *= (p_s != 0).float()  # ignore those samples that have no contribution
+    loss = loss * (p_s != 0).float()  # ignore those samples that have no contribution
     loss = torch.sum(loss)
     
     return loss
@@ -264,7 +296,7 @@ def RoI_loss(p, u, t, v, lbd=1):
     t_u = torch.stack(bbox_u, 0)
     
     loss = nn.functional.cross_entropy(p, u) \
-         + torch.mean(lbd * (u != 0) * smooth_L1(t_u - v, dim=1))
+         + torch.mean(lbd * (u != 0).float() * smooth_L1(t_u - v, dim=1))
     
     return loss
 

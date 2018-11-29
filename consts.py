@@ -10,7 +10,7 @@ import torch
 
 # %% compute the size of the 9 anchors
 
-anchor_areas = [128**2, 256**2, 512**2]
+anchor_areas = [64**2, 128**2, 256**2, 512**2]
 anchor_ratios = [1/2, 1/1, 2/1]
 anchor_sizes = []
 for ratio in anchor_ratios:
@@ -24,7 +24,7 @@ for ratio in anchor_ratios:
 logdir = 'result'
 #stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
 num_classes = 80  # 80 for coco 2017, and 20 for pascal voc 2007
-num_anchors = 9
+num_anchors = len(anchor_sizes)
     
 # These are for MS COCO
 train_data_dir = '/home/user/coco/train2017'

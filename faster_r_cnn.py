@@ -13,7 +13,7 @@ import torch.nn as nn
 import torchvision
 
 from utility import clip_box
-from consts import num_classes
+from consts import num_classes, num_anchors
 
 
 # %% Utility layers
@@ -71,8 +71,10 @@ class RegionProposalNetwork(nn.Module):
         # padding 1 to keep the map of the same size
         self.conv_feat = nn.Conv2d(512, 512, kernel_size=(3,3), stride=1, padding=1)
         self.relu = nn.ReLU(inplace=True)
-        self.conv_cls = nn.Conv2d(512, 18, kernel_size=(1,1), stride=1, padding=0)
-        self.conv_reg = nn.Conv2d(512, 36, kernel_size=(1,1), stride=1, padding=0)
+        self.conv_cls = nn.Conv2d(512, 2*num_anchors,
+                                  kernel_size=(1,1), stride=1, padding=0)
+        self.conv_reg = nn.Conv2d(512, 4*num_anchors,
+                                  kernel_size=(1,1), stride=1, padding=0)
     def forward(self, x):
         x = self.conv_feat(x)
         x = self.relu(x)
@@ -120,7 +122,7 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, params, pretrained=False):
+    def __init__(self, params):
         """
         Inputs:
             - params: Dictionary of {component : filename} to load state dict
@@ -128,6 +130,7 @@ class FasterRCNN(nn.Module):
               (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
         """
         super(FasterRCNN, self).__init__()
+        pretrained = False if params else True
         VGG = torchvision.models.vgg16(pretrained)
         # The features of vgg16, with no max pooling at the end
         self.CNN = nn.Sequential(*list(VGG.features.children())[:-1])
@@ -138,11 +141,11 @@ class FasterRCNN(nn.Module):
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
         self.submodules = [self.CNN, self.RPN, self.RCNN]
         
-        # Load parameters of some modules
-        for c, f in params.items():
-            self.submodules[c].load_state_dict(torch.load(f))
-        # And randomize the parameters of others
-        for c, child in enumerate(self.submodules[1:]):
-            if c not in params:
+        if params:
+            # Load parameters
+            self.load_state_dict(torch.load(params))
+        else:
+            # And randomize the parameters otherwise
+            for child in self.submodules[1:]:
                 child.weight_init()
         
