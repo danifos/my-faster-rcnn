@@ -63,7 +63,8 @@ def check_AP(x, y, model):
     x = x.to(device=device, dtype=dtype)
     features = model.CNN(x)
     RPN_cls, RPN_reg = model.RPN(features)
-    proposals = create_proposals(RPN_cls, RPN_reg, x)
+    # 300 top-ranked proposals at test time
+    proposals = create_proposals(RPN_cls, RPN_reg, x, 300)
     
     RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
     N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]

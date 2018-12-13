@@ -31,7 +31,7 @@ class CocoDetection(Dataset):
     Inputs:
         - root (string): Root directory where images are downloaded to.
         - annFile (string): Path to json annotation file.
-        - transform (callable, optional): A function/transform that  takes in an PIL image
+        - transform (callable, optional): A function/transform that takes in an PIL image
           and returns a transformed version. E.g, ``transforms.ToTensor``
         - target_transform (callable, optional): A function/transform that takes in the
           target and transforms it.
@@ -94,9 +94,9 @@ class XMLHandler(xml.sax.ContentHandler):
     def endElement(self, tag):
         self.depth -= 1
 
-        if tag == 'bndbox':
-            self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]
-            self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]
+        if tag == 'bndbox' and self.depth == 2:
+            self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]-1
+            self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]-1
         self.cur = ''
     
     def characters(self, cnt):
@@ -111,7 +111,7 @@ class VOCDetection(Dataset):
     Inputs:
         - root (string): Root directory where images are downloaded to.
         - ann (string): Path to xml annotation files.
-        - transform (callable, optional): A function/transform that  takes in an PIL image
+        - transform (callable, optional): A function/transform that takes in an PIL image
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
@@ -159,7 +159,7 @@ def transform_image(img, targets, transform):
     else:
         w = 600
         h = int(w/width*height)
-    img = T.Resize((w, h))(img)
+    img = T.Resize((h, w))(img)
     
     if transform is not None:
         img = transform(img)
@@ -193,6 +193,7 @@ def create_anchors(img):
     w, h = img.shape[3], img.shape[2]
     W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
+    wscale = hscale = 16
     
     anchors = Tensor(4, num_anchors, H, W)
     x = (torch.arange(W, dtype=torch.float32, device=device)*wscale).view(1, 1, 1, -1)
@@ -206,63 +207,60 @@ def create_anchors(img):
     return anchors
 
 
-def sample_anchors(img, targets):
+def sample_anchors(img, targets, num_p=128, num_t=256):
     """
     Inputs:
         - img: The input image
         - targets: The ground-truth objects in the image,
           number in which are transformed to scalar tensors
+        - num_p: Expected number of positive anchor samples
+        - num_t: Number of samples (batch_size)
     Returns:
         - samples: Tensor of size 4xAxHxW, denoting the coords of each sample,
           scale as parameterization on anchors
         - labels: CharTensor of size (A*H*W), denoting the label of each sample
           (1: positive, -1: negative, 0: neither)
     """
+#    print('{} targets in the image'.format(len(targets)), end=' ')
+#    for target in targets:
+#        print('[', end='')
+#        for coord in target['bbox']:
+#            print(int(coord.numpy()), end=' ')
+#        print(']', end=', ')
+#    print()
     anchors = create_anchors(img).view(4, -1)  # flatten the 4xAxHxW to 4x(A*H*W)
     
     N = anchors.shape[1]
     bboxes = Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(anchors, bboxes)
             
-    samples = torch.zeros(anchors.shape, device=device)
+    #samples = torch.zeros(anchors.shape, device=device)
     labels = torch.zeros(N, dtype=torch.long, device=device)
-    num_samples = 0
     
-    # Find the anchor as a positive sample
-    # "with the higheset IoU overlap with a ground-truth box"
-    for j in range(len(targets)):
-        IoU_j = IoUs[:,j]
-        i = np.where(IoU_j == torch.max(IoU_j))[0][0]
-        IoUs[i,j] = 0.5  # Not to be chose again
-        labels[i] = 1
-        samples[:,i] = parameterize(bboxes[:,j], anchors[:,i])
-        num_samples += 1
-        # ! Assume that there's no more than 128 targets
+    # ! New way to sample the other anchors, inspired by rbg's implementation
     
-    # For the sake of randomness, map i to another index
-    perms = np.arange(N)
-    np.random.shuffle(perms)
+    argmax_IoUs = torch.argmax(IoUs, dim=1)
     
-    IoUs_p = torch.any(IoUs > 0.7, dim=1)
-    IoUs_n = torch.any(IoUs < 0.3, dim=1)
+    # Find the anchor as a positive sample with the highest IoU with a gt box
+    max_gts = torch.argmax(IoUs, dim=0)
+    labels[max_gts] = 1
+    print('now {} positive samples'.format(len(np.where(labels==1)[0])))
     
-    # Find the anchor as a positive sample
-    # "that has an IoU overlap over 0.7 with any ground-truth box"
-    for i in perms:
-        if num_samples == 128:
-            break  # No more than 128 positive samples
-        if IoUs_p[i]:
-            labels[i] = 1
-            num_samples += 1
+    # Find other positive and negative samples
+    labels[np.where(torch.any(IoUs > 0.7, dim=1))[0]] = 1
+    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = -1
     
-    # Find the anchor as a negative sample
-    # "if its IoU ratio is lower than 0.3 for all ground-truth boxes"
-    for i in perms:
-        if num_samples == 256:
-            break  # No more than 256 samples
-        if IoUs_n[i]:
-            labels[i] = -1
-            num_samples += 1
+    # Subsample if we have too many
+    inds_p = np.where(labels == 1)[0]
+    if len(inds_p) > num_p:
+        labels[np.random.choice(inds_p, len(inds_p)-num_p, replace=False)] = 0
+    num_n = num_t - torch.sum(labels == 1).detach().cpu().numpy()
+    inds_n = np.where(labels == -1)[0]
+    if len(inds_n) > num_n:
+        labels[np.random.choice(inds_n, len(inds_n)-num_n, replace=False)] = 0
+    print('{} positive samples, {} negative samples'.format(num_t-num_n, num_n))
+    
+    samples = parameterize(anchors, bboxes[:, argmax_IoUs])
     
     return samples, labels
 
@@ -371,8 +369,11 @@ def sample_proposals(proposals, targets, num_samples=128):
                 gt_coords.append(parameterize(bboxes[:,j], proposals[:,i]))
                 gt_labels.append(targets[j]['class_idx'].to(device=device))
                 num_fg_cur += 1
+            elif max_IoUs[i] > 0:
+                j = np.where(IoUs[i] == max_IoUs[i])[0][0]
+                #print(max_IoUs[i].detach().cpu().numpy(), proposals[:,i].detach().cpu().numpy(), bboxes[:,j].detach().cpu().numpy())
         if num_bg_cur < num_bg_total:
-            if 0 <= max_IoUs[i] <  0.5:  # ! The 0 should be 0.1 in final version
+            if 0 <= max_IoUs[i] <  0.5:  # use 0 instead of 0.1, see p.10
                 samples.append(proposals[:,i])
                 gt_coords.append(none)  # No need for the ground-truth coords
                 gt_labels.append(zero)  # 0 for the background class

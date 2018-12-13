@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from consts import num_classes, device, Tensor
+from consts import num_classes, dtype, device, Tensor
 
 from time import time
 
@@ -51,7 +51,7 @@ def IoU(bb1, bb2):
     xa1, ya1, w1, h1 = bb1.view(4, N, 1)  # shape (N, 1)
     xa2, ya2, w2, h2 = bb2.view(4, 1, M)  # shape (1, M)
     xb1, yb1 = xa1+w1, ya1+h1  # shape (N, 1)
-    xb2, yb2 = xa2+w2, ya2+w2  # shape (1, M)
+    xb2, yb2 = xa2+w2, ya2+h2  # shape (1, M)
 
     xa, ya = torch.max(xa1, xa2), torch.max(ya1, ya2)  # shape (N, M)
     xb, yb = torch.min(xb1, xb2), torch.min(yb1, yb2)  # shape (N, M)
@@ -141,7 +141,7 @@ def NMS(coords, scores, threshold=0.7):
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     lst = coords[:, indices]
     #print(lst.shape)
-    IoUs = IoU(lst, lst)
+    #IoUs = IoU(lst, lst)
     N = lst.shape[1]
     ret = []
     det = torch.ones(N, dtype=torch.uint8, device=device)
@@ -149,7 +149,8 @@ def NMS(coords, scores, threshold=0.7):
     for i in range(N):
         if det[i]:
             ret.append(lst[:,i])
-            det &= (IoUs[i] < threshold)
+            det &= (IoU(lst[:,i:i+1], lst)[0] < threshold)
+            #det &= (IoUs[i] < threshold)
                     
     ret = torch.stack(ret, dim=1)
     return ret
@@ -238,11 +239,11 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
     Compute the multi-task loss function for an image of RPN
     
     Inputs:
-        - p: The predicted probability of anchor i being an object (size: ~~2xN~~ 1x18xHxW)
+        - p: The predicted probability of anchor i being an object (size: 1x18xHxW)
         - p_s: The binary class label of an anchor mentioned before (size: N)
           (For convenient, I denote positive 1, negative -1, and no-contrib 0)
         - t: A vector representing the 4 parameterized coordinates
-          of the predicted bounding box (size: ~~4xN~~ 1x36xHxW),
+          of the predicted bounding box (size: 1x36xHxW),
           scale as parameterization on anchors
         - t_s: That of the ground-truth box associated with a positive anchor (size: 4xN),
           scale as parameterization on anchors
@@ -250,13 +251,14 @@ def RPN_loss(p, p_s, t, t_s, lbd=10):
     Returns:
         - loss: A scalar tensor of the loss
     """
+    N_cls = torch.sum(torch.abs(p_s) > 0, dtype=dtype)  # should be 256
+    N_reg = p.shape[2] * p.shape[3]  # ~2400
+    labels = (p_s+1)/2  # 1 if positive, 0 otherwise
     # Outputs of RPN corresponding the anchors (flatten in the same way)
     p = p.squeeze().view(2, -1)
     t = t.squeeze().view(4, -1)
-    N_cls = 256
-    N_reg = p.shape[1]
-    loss = nn.functional.cross_entropy(p.t(), torch.abs(p_s), reduction='none') / N_cls \
-         + lbd * ((p_s+1)/2).float() * smooth_L1(t - t_s) / N_reg
+    loss = nn.functional.cross_entropy(p.t(), labels, reduction='none') / N_cls \
+         + lbd * labels.float() * smooth_L1(t - t_s) / N_reg
     loss = loss * (p_s != 0).float()  # ignore those samples that have no contribution
     loss = torch.sum(loss)
     

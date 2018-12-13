@@ -21,12 +21,13 @@ from torch.utils.data import sampler
 
 import torchvision.transforms as T
 
-from sampler import CocoDetection
+from sampler import CocoDetection, VOCDetection
 from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
 from utility import RPN_loss, RoI_loss
 from consts import logdir, model_to_train, dtype, device
-from consts import train_data_dir, train_ann_dir, val_data_dir, val_ann_dir
+#from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
+from consts import voc_train_data_dir, voc_train_ann_dir
 from test import check_mAP
 
 # %% A test of sample_anchors
@@ -50,17 +51,24 @@ transform = T.Compose([
     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-coco_train = CocoDetection(root=train_data_dir, ann=train_ann_dir, transform=transform)
-
-coco_val = CocoDetection(root=val_data_dir, ann=val_ann_dir, transform=transform)
+#coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
+#coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
+voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform=transform)
+voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform=transform)
 
 
 # %% Data loders
 
-loader_train = DataLoader(coco_train, batch_size=1,
-                           sampler=sampler.SubsetRandomSampler(range(len(coco_train))))
-loader_val = DataLoader(coco_val, batch_size=1,
-                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
+#loader_train = DataLoader(coco_train, batch_size=1,
+#                           sampler=sampler.SubsetRandomSampler(range(len(coco_train))))
+#loader_val = DataLoader(coco_val, batch_size=1,
+#                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
+
+num_val = 500
+loader_train = DataLoader(voc_train, batch_size=1,
+                           sampler=sampler.SubsetRandomSampler(range(num_val, len(voc_train))))
+loader_val = DataLoader(voc_val, batch_size=1,
+                        sampler=sampler.SubsetRandomSampler(range(num_val)))
 
 
 # %% Initialization
@@ -286,5 +294,4 @@ def main():
 
 if __name__ == '__main__':
     import cProfile
-    import re
     cProfile.run('main()', 'profile.txt')
