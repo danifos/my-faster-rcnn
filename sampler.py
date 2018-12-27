@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 import torchvision.transforms as T
 from PIL import Image
 
-from utility import IoU, parameterize, inv_parameterize, clip_box, remove_cross_boundary, NMS
+from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
 from consts import Tensor, LongTensor, dtype, device
 
@@ -137,7 +137,7 @@ class VOCDetection(Dataset):
         targets = []
         self.parser.setContentHandler(XMLHandler(targets))
         self.parser.parse(os.path.join(self.ann, pre+'.xml'))
-        print(targets)
+        print(pre, targets)
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         img, targets = transform_image(img, targets, self.transform)
@@ -221,13 +221,6 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
         - labels: CharTensor of size (A*H*W), denoting the label of each sample
           (1: positive, -1: negative, 0: neither)
     """
-#    print('{} targets in the image'.format(len(targets)), end=' ')
-#    for target in targets:
-#        print('[', end='')
-#        for coord in target['bbox']:
-#            print(int(coord.numpy()), end=' ')
-#        print(']', end=', ')
-#    print()
     anchors = create_anchors(img).view(4, -1)  # flatten the 4xAxHxW to 4x(A*H*W)
     
     N = anchors.shape[1]
@@ -267,7 +260,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, img, training=False, num_proposals=1000):
+def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -278,6 +271,7 @@ def create_proposals(y_cls, y_reg, img, training=False, num_proposals=1000):
         - y_reg: Regression coodinates output by RPN, of size 1x36xHxW,
           scale as parameterization on anchors (obviously)
         - img: The input image
+        - im_scale: The scale ratio in `transform_iamge()`
         - training: Create proposals for training or testing, default by False.
           Ignore the cross-boundary anchors if True,
           which will remove about 2/3 of the anchors.
@@ -285,35 +279,39 @@ def create_proposals(y_cls, y_reg, img, training=False, num_proposals=1000):
         - List of proposals that will be fed into the Fast R-CNN.
           scale as input. Should be of length 2000
     """
-    H, W = y_cls.shape[2:]
-
-    anchors = create_anchors(img)
+    # Get number of proposals by training
+    pre_nms_num = 12000 if training else 6000
+    post_nms_num = 2000 if training else 300
     
-#    y_cls = y_cls.squeeze().view(2, -1)
-#    y_reg = y_reg.squeeze().view(4, -1)
+    # 1. Generate proposals from bbox deltas and shifted anchors
+    H, W = y_cls.shape[2:]
+    
+    anchors = create_anchors(img)
     
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
     
     # ! Note the correspondance of y_reg and anchors
     coords = inv_parameterize(y_reg.squeeze().view(4, num_anchors, H, W),
                               anchors)  # corrected coords of anchors, back to input scale
-    
+    del anchors  # release memory
     coords = coords.view(4, -1)
-    anchors = anchors.view(4, -1)
-    if training:  # ignore cross-boundray anchors and their coords and scores
-        scores, coords = remove_cross_boundary(anchors,
-                                               img.shape[3], img.shape[2],
-                                               scores, coords)
-    del anchors
     
-    # Non-maximum suppression
-    coords = NMS(coords, scores)
+    # 2. clip predicted boxes to image
     coords = clip_box(coords, img.shape[3], img.shape[2])
     
-    # Find n highest proposals
-    lst = coords[:, :num_proposals]
+    # 3. remove predicted boxes with either height or width < threshold
+    coords, scores = filter_boxes(coords, int(16*im_scale),
+                                  coords, scores)
     
-    return lst
+    # 4. sort all (proposal, score) pairs by score from highest to lowest
+    # 5. take top pre_nms_topN (e.g. 6000)
+    # 6. apply nms (e.g. threshold = 0.7)
+    # 7. take after_nms_topN (e.g. 300)
+    # 8. return the top proposals (-> RoIs top)
+    # All done by this non-maximum suppression
+    coords = NMS(coords, scores, pre_nms_num, post_nms_num)
+    
+    return coords
 
 
 def sample_proposals(proposals, targets, num_samples=128):

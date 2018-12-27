@@ -65,7 +65,7 @@ def IoU(bb1, bb2):
     return I/U
 
 
-def clip_box(lst, W, H):
+def clip_box(lst, W, H, keep_neg=True):
     """
     Clip bounding boxes to limit them is a scale
     
@@ -95,6 +95,9 @@ def clip_box(lst, W, H):
     # Clip h
     lst[3] = torch.min(lst[3], Hs-lst[1])
     
+    if keep_neg:
+        return lst
+    
     # Eliminate bounding boxes that have non-positive values
     pos = torch.sum(lst>0, 0)
     indices = torch.from_numpy(np.where(pos == 4)[0]).to(device=device)
@@ -104,7 +107,7 @@ def clip_box(lst, W, H):
     return ret
 
 
-def remove_cross_boundary(lst, W, H, *args):
+def filter_boxes(lst, min_size, *args):
     """
     Ignore the cross-boundary anchors,
     as well as their corresponding coordinates and scores.
@@ -116,37 +119,38 @@ def remove_cross_boundary(lst, W, H, *args):
         - rets: Tensors corresponding to args
     """
     
-    x, y, w, h = lst
-    in_boundary = (x >= 0) & (y >= 0) & (x+w <= W) & (y+h <= H)
-    indices = torch.from_numpy(np.where(in_boundary)[0]).to(device=device)
+    _, _, w, h = lst
+    mask = (w >= min_size) & (h >= min_size)
+    indices = torch.from_numpy(np.where(mask)[0]).to(device=device)
     M = indices.shape[0]
     indices = indices.unsqueeze(0)
     
-    rets = []
     for arg in args:
-        rets.append(torch.gather(arg, 1, indices.expand(arg.shape[0], M)))
-    
-    return rets
+        yield torch.gather(arg, 1, indices.expand(arg.shape[0], M))
 
 
-def NMS(coords, scores, threshold=0.7):
+def NMS(coords, scores, pre_n, post_n, threshold=0.7):
     """
     Non-Maximum Supression (vectorized) for proposals.
     Input:
         - coords: Tensor of bounding boxes, size (4xN)
         - scores: Tensor of their scores, size (2xN)
+        - pre_n: Take top n scores before
+        - post_n: Take first n coords after
     Returns:
         - ret: Tensor of selected bounding boxes, size (4xM)
     """
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
+    indices = indices[:pre_n]
     lst = coords[:, indices]
-    #print(lst.shape)
     #IoUs = IoU(lst, lst)
     N = lst.shape[1]
     ret = []
     det = torch.ones(N, dtype=torch.uint8, device=device)
     
     for i in range(N):
+        if len(ret) == post_n:
+            break
         if det[i]:
             ret.append(lst[:,i])
             det &= (IoU(lst[:,i:i+1], lst)[0] < threshold)

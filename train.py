@@ -266,7 +266,7 @@ def train_step(x, y, optimizer):
     rpn_loss = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
     
     # Create about 2000 region proposals
-    proposals = create_proposals(RPN_cls, RPN_reg, x, training=True)
+    proposals = create_proposals(RPN_cls, RPN_reg, x, y[0]['scale'][0], training=True)
     # Sample 128 proposals
     proposal_samples, gt_coords, gt_labels = sample_proposals(proposals, y)
     # Get Nx81 classification scores
