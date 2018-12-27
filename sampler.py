@@ -244,7 +244,6 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     # Find the anchor as a positive sample with the highest IoU with a gt box
     max_gts = torch.argmax(IoUs, dim=0)
     labels[max_gts] = 1
-    print('now {} positive samples'.format(len(np.where(labels==1)[0])))
     
     # Find other positive and negative samples
     labels[np.where(torch.any(IoUs > 0.7, dim=1))[0]] = 1
@@ -258,7 +257,8 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     inds_n = np.where(labels == -1)[0]
     if len(inds_n) > num_n:
         labels[np.random.choice(inds_n, len(inds_n)-num_n, replace=False)] = 0
-    print('{} positive samples, {} negative samples'.format(num_t-num_n, num_n))
+    print('{} positive anchor samples'.format(num_t-num_n))
+    print('{} negative anchor samples'.format(num_n))
     
     samples = parameterize(anchors, bboxes[:, argmax_IoUs])
     
@@ -267,7 +267,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
 
 # %% Proposal creator and sampler
 
-def create_proposals(y_cls, y_reg, img, training=False, num_proposals=2000):
+def create_proposals(y_cls, y_reg, img, training=False, num_proposals=1000):
     """
     Create some proposals, either as region proposals for R-CNN when testing,
     or as the proposals ready for sampling when training.
@@ -337,57 +337,35 @@ def sample_proposals(proposals, targets, num_samples=128):
           scale as parameterization on proposals
         - gt_labels: Tensor sof ground-truth classes of size N
     """
-    samples, gt_coords, gt_labels = [], [], []
-    num_fg_cur = num_bg_cur = 0
     num_fg_total = num_samples//4  # 25% foreground classes samples
     num_bg_total = num_samples-num_fg_total
     
     # Compute IoU
-#    from utility import _IoU
-#    _IoUs = np.zeros((proposals.shape[1], len(targets)))
-#    for i, proposal in enumerate(proposals.t()):
-#        for j, target in enumerate(targets):
-#            _IoUs[i,j] = _IoU(proposal.detach().cpu().numpy(), target['bbox'])
-#    max_IoUs = np.max(_IoUs, axis=1)  # Max IoU for each proposal
     bboxes = Tensor([target['bbox'] for target in targets]).t()
+    labels = LongTensor([target['class_idx'] for target in targets])
+    proposals = torch.cat((proposals, bboxes), dim=1)  # append gt boxes to avoid zero sample
     IoUs = IoU(proposals, bboxes)
-    max_IoUs = torch.max(IoUs, dim=1)[0]  # Max IoU for each proposal
+    max_IoUs, argmax_IoUs = torch.max(IoUs, dim=1)  # Max IoU for each proposal
     
-    N = proposals.shape[1]
-    perms = np.arange(N)
-    np.random.shuffle(perms)
-    
-    none = Tensor(4)
-    zero = LongTensor([0])
-    for i in perms:
-        if num_fg_cur < num_fg_total:
-            if max_IoUs[i] >= 0.5:
-                j = np.where(IoUs[i] == max_IoUs[i])[0][0]  # Max responsed gt
-                print(j, end=' ')
-                samples.append(proposals[:,i])
-                # And parameterize the GT bbox into the output to be learned
-                gt_coords.append(parameterize(bboxes[:,j], proposals[:,i]))
-                gt_labels.append(targets[j]['class_idx'].to(device=device))
-                num_fg_cur += 1
-            elif max_IoUs[i] > 0:
-                j = np.where(IoUs[i] == max_IoUs[i])[0][0]
-                #print(max_IoUs[i].detach().cpu().numpy(), proposals[:,i].detach().cpu().numpy(), bboxes[:,j].detach().cpu().numpy())
-        if num_bg_cur < num_bg_total:
-            if 0 <= max_IoUs[i] <  0.5:  # use 0 instead of 0.1, see p.10
-                samples.append(proposals[:,i])
-                gt_coords.append(none)  # No need for the ground-truth coords
-                gt_labels.append(zero)  # 0 for the background class
-                num_bg_cur += 1
-        else:  # Have 128 samples already
-            break
+    # Choose samples' indices
+    inds_fg = np.where(max_IoUs >= 0.5)[0]
+    if len(inds_fg) > num_fg_total:
+        inds_fg = np.random.choice(inds_fg, num_fg_total, replace=False)
+    inds_bg = np.where((max_IoUs < 0.5) & (max_IoUs >= 0.1))[0]
+    num_bg_total = num_samples - torch.sum(max_IoUs >= 0.5).detach().cpu().numpy()
+    if len(inds_fg) > num_bg_total:
+        inds_bg = np.random.choice(inds_bg, num_bg_total, replace=False)
         
-    samples = torch.stack(samples, dim=0)
-    gt_coords = torch.stack(gt_coords, dim=0)
-    gt_labels = torch.cat(gt_labels, dim=0)
-    print()
-#    print(samples.shape, samples.dtype, samples.device)
-#    print(gt_coords.shape, gt_coords.dtype, gt_coords.device)
-#    print(gt_labels.shape, gt_labels.dtype, gt_labels.device)
+    # Compute targets
+    inds_all = np.append(inds_fg, inds_bg)
+    samples = proposals[:, inds_all]
+    gt_coords = parameterize(bboxes[:, argmax_IoUs[inds_all]], samples)
+    gt_labels = labels[argmax_IoUs[inds_all]]
+    samples = samples.t()
+    gt_coords = gt_coords.t()
+    
+    print('{} positive roi samples'.format(min(len(inds_fg), num_fg_total)))
+    print('{} negative roi samples'.format(min(len(inds_bg), num_bg_total)))
     
     return samples, gt_coords, gt_labels
             

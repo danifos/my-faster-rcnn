@@ -187,8 +187,8 @@ def get_optimizer():
 def train(print_every=100, check_every=10000):
     # ===================  Preparations for debugging  ========================
     tic = time()
-#    import gc
-#    fo = open('log.txt', 'w')
+    import gc
+    fo = open('log.txt', 'w')
     # =========================================================================
     global model, epoch, step, learning_rate
     
@@ -205,13 +205,13 @@ def train(print_every=100, check_every=10000):
             toc = time()
             print('Use time: {:.2f}s'.format(toc-tic))
             tic = toc
-#            print(file=fo)
-#            numel = 0
-#            for obj in gc.get_objects():
-#                if torch.is_tensor(obj):
-#                    numel += obj.numel()
-#                    #print(type(obj), obj.size(), file=fo)
-#            print(numel, file=fo, end='')
+            print(file=fo)
+            numel = 0
+            for obj in gc.get_objects():
+                if torch.is_tensor(obj):
+                    numel += obj.numel()
+                    #print(type(obj), obj.size(), file=fo)
+            print(numel, file=fo, end='')
             # =================================================================
             
             loss = train_step(x, y, optimizer)
