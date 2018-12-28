@@ -219,16 +219,15 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
         - samples: Tensor of size 4xAxHxW, denoting the coords of each sample,
           scale as parameterization on anchors
         - labels: CharTensor of size (A*H*W), denoting the label of each sample
-          (1: positive, -1: negative, 0: neither)
+          (1: positive, 0: negative, -1: neither)
     """
     anchors = create_anchors(img).view(4, -1)  # flatten the 4xAxHxW to 4x(A*H*W)
     
     N = anchors.shape[1]
     bboxes = Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(anchors, bboxes)
-            
-    #samples = torch.zeros(anchors.shape, device=device)
-    labels = torch.zeros(N, dtype=torch.long, device=device)
+    
+    labels = -1 * torch.ones(N, dtype=torch.long, device=device)
     
     # ! New way to sample the other anchors, inspired by rbg's implementation
     
@@ -240,16 +239,16 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     
     # Find other positive and negative samples
     labels[np.where(torch.any(IoUs > 0.7, dim=1))[0]] = 1
-    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = -1
+    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = 0
     
     # Subsample if we have too many
     inds_p = np.where(labels == 1)[0]
     if len(inds_p) > num_p:
-        labels[np.random.choice(inds_p, len(inds_p)-num_p, replace=False)] = 0
+        labels[np.random.choice(inds_p, len(inds_p)-num_p, replace=False)] = -1
     num_n = num_t - torch.sum(labels == 1).detach().cpu().numpy()
-    inds_n = np.where(labels == -1)[0]
+    inds_n = np.where(labels == 0)[0]
     if len(inds_n) > num_n:
-        labels[np.random.choice(inds_n, len(inds_n)-num_n, replace=False)] = 0
+        labels[np.random.choice(inds_n, len(inds_n)-num_n, replace=False)] = -1
     print('{} positive anchor samples'.format(num_t-num_n))
     print('{} negative anchor samples'.format(num_n))
     
@@ -351,7 +350,7 @@ def sample_proposals(proposals, targets, num_samples=128):
         inds_fg = np.random.choice(inds_fg, num_fg_total, replace=False)
     inds_bg = np.where((max_IoUs < 0.5) & (max_IoUs >= 0.1))[0]
     num_bg_total = num_samples - torch.sum(max_IoUs >= 0.5).detach().cpu().numpy()
-    if len(inds_fg) > num_bg_total:
+    if len(inds_bg) > num_bg_total:
         inds_bg = np.random.choice(inds_bg, num_bg_total, replace=False)
         
     # Compute targets

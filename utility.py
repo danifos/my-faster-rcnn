@@ -226,50 +226,71 @@ def average_precision(lst, targets, threshold=0.5):
 
 # %% Utils for loss
 
-def smooth_L1(x, dim=0):
+def smooth_L1(x, t, in_weight, sigma):
     """
     Inputs:
-        - x: Tensor of size 4xN (by default) or size Nx4 (when dim=1)
+        - x, t, in_weight: Tensor of size 4xN
+        - sigma: Balancing factor
     Returns:
-        - loss: Tensor of size N
+        - loss: Tensor scalar
     """
-    mask = (torch.abs(x) < 1).float()
-    loss = torch.sum(mask*0.5*torch.pow(x, 2) + (1-mask)*(torch.abs(x)-0.5), dim)
+    s2 = sigma**2
+    diff = torch.abs(in_weight * (x-t))
+    mask = (diff < 1/s2).float()
+    loss = mask * (s2/2) * torch.pow(diff, 2) + (1-mask) * (diff - 1/(s2*2))
+    return loss.sum()
+
+
+def localization_loss(coords, gt_coords, gt_labels, sigma):
+    """
+    The regression loss for both RPN and Fast R-CNN
+    
+    Inputs:
+        - coords: Parameterized predicted coords (size: 4xN)
+        - gt_coords: Parameterized ground-truth coords (size: 4xN)
+        - gt_labels: Groud-truth labels (size: N)
+        - sigma: Balancing parameter. The paper use lambda instead, but here,
+          sigma=3 for RPN loss and sigma=1 for roi loss
+    Returns:
+        - loss: Tensor scalar
+    """
+    in_weight = torch.zeros_like(coords, dtype=dtype, device=device)
+    in_weight[(gt_labels > 0).expand_as(coords)] = 1
+    loss = smooth_L1(coords, gt_coords, in_weight, sigma)
+    loss /= (gt_labels >= 0).sum().float()
     return loss
 
 
-def RPN_loss(p, p_s, t, t_s, lbd=10):
+def RPN_loss(p, p_s, t, t_s, sigma=3):
     """
     Compute the multi-task loss function for an image of RPN
     
     Inputs:
         - p: The predicted probability of anchor i being an object (size: 1x18xHxW)
         - p_s: The binary class label of an anchor mentioned before (size: N)
-          (For convenient, I denote positive 1, negative -1, and no-contrib 0)
+          (For convenient, I denote positive 1, negative 0, and no-contrib -1)
         - t: A vector representing the 4 parameterized coordinates
           of the predicted bounding box (size: 1x36xHxW),
           scale as parameterization on anchors
         - t_s: That of the ground-truth box associated with a positive anchor (size: 4xN),
           scale as parameterization on anchors
-        - lbd: The balancing parameter lambda
+        - sigma: The balancing parameter lambda
     Returns:
         - loss: A scalar tensor of the loss
     """
-    N_cls = torch.sum(torch.abs(p_s) > 0, dtype=dtype)  # should be 256
-    N_reg = p.shape[2] * p.shape[3]  # ~2400
-    labels = (p_s+1)/2  # 1 if positive, 0 otherwise
     # Outputs of RPN corresponding the anchors (flatten in the same way)
     p = p.squeeze().view(2, -1)
     t = t.squeeze().view(4, -1)
-    loss = nn.functional.cross_entropy(p.t(), labels, reduction='none') / N_cls \
-         + lbd * labels.float() * smooth_L1(t - t_s) / N_reg
-    loss = loss * (p_s != 0).float()  # ignore those samples that have no contribution
-    loss = torch.sum(loss)
+    cls_loss = nn.functional.cross_entropy(p.t(), p_s, ignore_index=-1)
+    reg_loss = localization_loss(t, t_s, p_s, 3)
+    print('RPN cls loss: {:.2f}'.format(cls_loss.detach().cpu().numpy()))
+    print('RPN reg loss: {:.2f}'.format(reg_loss.detach().cpu().numpy()))
+    loss = cls_loss + reg_loss
     
     return loss
 
 
-def RoI_loss(p, u, t, v, lbd=1):
+def RoI_loss(p, u, t, v, sigma=1):
     """
     Compute the multi-task loss function for an image of Fast R-CNN
     
@@ -283,17 +304,20 @@ def RoI_loss(p, u, t, v, lbd=1):
     Returns:
         - loss: A scalar tensor of the loss
     """
-    # ! Note: Where there is a `view`, there is a wait
-    # (but here, it appears that it doesn't matter - the prediction is output by an fc layer)
+    # It doesn't matter how to `view` - the prediction is output by an fc layer
     N = t.shape[0]
     t = t.view(N, 4, -1)
+    # t_u: Parameterized pedicted coords of the ground-truth class
     bbox_u = [None] * N
     for i in range(N):
         bbox_u[i] = t[i, :, u[i]]
     t_u = torch.stack(bbox_u, 0)
     
-    loss = nn.functional.cross_entropy(p, u) \
-         + torch.mean(lbd * (u != 0).float() * smooth_L1(t_u - v, dim=1))
+    cls_loss = nn.functional.cross_entropy(p, u)
+    reg_loss = localization_loss(t_u.t(), v.t(), u, 1)
+    print('RoI cls loss: {:.2f}'.format(cls_loss.detach().cpu().numpy()))
+    print('RoI reg loss: {:.2f}'.format(reg_loss.detach().cpu().numpy()))
+    loss = cls_loss + reg_loss
     
     return loss
 
