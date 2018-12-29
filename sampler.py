@@ -124,6 +124,11 @@ class VOCDetection(Dataset):
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
+        self.order = True  # sample images in order for a sanity check
+        if self.order:
+            self.images.sort()
+            self.index = 16
+
     def __getitem__(self, index):
         """
         Inputs:
@@ -131,7 +136,12 @@ class VOCDetection(Dataset):
         Returns:
             - tuple: Tuple (image, targets).
         """
-        path = self.images[index]
+        if self.order:
+            path = self.images[self.index]
+            self.index += 1
+            self.index %= len(self)
+        else:
+            path = self.images[index]
         pre, _ = os.path.splitext(path)
 
         targets = []

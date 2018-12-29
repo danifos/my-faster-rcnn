@@ -215,7 +215,7 @@ def train(print_every=100, check_every=10000):
             # =================================================================
             
             loss = train_step(x, y, optimizer)
-            print('-- loss = {:.4f}'.format(loss))
+            print('-- loss = {:.4f}\n'.format(loss))
             
             loss_summary['train'].append((step, loss))
             save_summary()
