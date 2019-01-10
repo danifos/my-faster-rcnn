@@ -207,6 +207,7 @@ def create_anchors(img, strip=16):
         - Tensor of anchors of size 4xAxHxW, scale as input
     """
     w, h = img.shape[3], img.shape[2]
+    print('Image size: {} x {}'.format(w, h))
     W, H = w//strip, h//strip  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     wscale = hscale = strip
@@ -366,8 +367,10 @@ def sample_proposals(proposals, targets, num_samples=128):
     inds_fg = np.where(max_IoUs >= 0.5)[0]
     if len(inds_fg) > num_fg_total:
         inds_fg = np.random.choice(inds_fg, num_fg_total, replace=False)
+    else:
+        num_fg_total = len(inds_fg)
     inds_bg = np.where((max_IoUs < 0.5) & (max_IoUs >= 0.1))[0]
-    num_bg_total = num_samples - torch.sum(max_IoUs >= 0.5).detach().cpu().numpy()
+    num_bg_total = num_samples - num_fg_total
     if len(inds_bg) > num_bg_total:
         inds_bg = np.random.choice(inds_bg, num_bg_total, replace=False)
         
