@@ -11,7 +11,7 @@ import torch
 # %% compute the size of the 9 anchors
 
 anchor_areas = [128**2, 256**2, 512**2]  # add 64**2 if coco is used
-anchor_ratios = [1/2, 1/1, 2/1]
+anchor_ratios = [2/1, 1/1, 1/2]
 anchor_sizes = []
 for ratio in anchor_ratios:
     for area in anchor_areas:

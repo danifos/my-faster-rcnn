@@ -237,7 +237,7 @@ def smooth_L1(x, t, in_weight, sigma):
     s2 = sigma**2
     diff = torch.abs(in_weight * (x-t))
     mask = (diff < 1/s2).float()
-    loss = mask * (s2/2) * torch.pow(diff, 2) + (1-mask) * (diff - 1/(s2*2))
+    loss = mask * (s2/2) * diff**2 + (1-mask) * (diff - 1/(s2*2))
     return loss.sum()
 
 
@@ -306,13 +306,10 @@ def RoI_loss(p, u, t, v, sigma=1):
     """
     # It doesn't matter how to `view` - the prediction is output by an fc layer
     N = t.shape[0]
-    t = t.view(N, 4, -1)
-    # t_u: Parameterized pedicted coords of the ground-truth class
-    bbox_u = [None] * N
-    for i in range(N):
-        bbox_u[i] = t[i, :, u[i]]
-    t_u = torch.stack(bbox_u, 0)
-    
+    t = t.view(N, -1, 4)
+    # t_u: Parameterized predicted coords of the ground-truth class
+    t_u = t[torch.arange(N), u]
+
     cls_loss = nn.functional.cross_entropy(p, u)
     reg_loss = localization_loss(t_u.t(), v.t(), u, 1)
     print('RoI cls loss: {:.2f}'.format(cls_loss.detach().cpu().numpy()))

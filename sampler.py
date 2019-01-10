@@ -127,7 +127,7 @@ class VOCDetection(Dataset):
         self.order = True  # sample images in order for a sanity check
         if self.order:
             self.images.sort()
-            self.index = 16
+            self.index = 0
 
     def __getitem__(self, index):
         """
@@ -152,6 +152,10 @@ class VOCDetection(Dataset):
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         img, targets = transform_image(img, targets, self.transform)
 
+        # Temporarily, ignore images that are too large to avoid OOM
+        if max(img.shape) >= 1000:
+            targets = []
+
         return img, targets
 
     def __len__(self):
@@ -163,13 +167,15 @@ class VOCDetection(Dataset):
 def transform_image(img, targets, transform):
     # "Rescale the image such that the short side is s=600 pixels"
     width, height = img.width, img.height
-    if height < width:
-        h = 600
-        w = int(h/height*width)
-    else:
-        w = 600
-        h = int(w/width*height)
-    img = T.Resize((h, w))(img)
+    # if height < width:
+    #     h = 600
+    #     w = int(h/height*width)
+    # else:
+    #     w = 600
+    #     h = int(w/width*height)
+    # img = T.Resize((h, w))(img)
+    img = T.Resize(600)(img)
+    w, h = img.width, img.height
     
     if transform is not None:
         img = transform(img)
@@ -193,7 +199,7 @@ def transform_image(img, targets, transform):
 
 # %% Anchors creator and sampler (256 each)
 
-def create_anchors(img):
+def create_anchors(img, strip=16):
     """
     Inputs:
         - img: The input image
@@ -201,16 +207,16 @@ def create_anchors(img):
         - Tensor of anchors of size 4xAxHxW, scale as input
     """
     w, h = img.shape[3], img.shape[2]
-    W, H = w//16, h//16  # ! Note that it may be not 16 if the CNN is not vgg16
+    W, H = w//strip, h//strip  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
-    wscale = hscale = 16
+    wscale = hscale = strip
     
     anchors = Tensor(4, num_anchors, H, W)
     x = (torch.arange(W, dtype=torch.float32, device=device)*wscale).view(1, 1, 1, -1)
     y = (torch.arange(H, dtype=torch.float32, device=device)*hscale).view(1, 1, -1, 1)
     for i, size in enumerate(anchor_sizes):
-        anchors[0,i] = x-size[0]/2
-        anchors[1,i] = y-size[1]/2
+        anchors[0,i] = x - size[0]/2 + strip/2
+        anchors[1,i] = y - size[1]/2 + strip/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
     
@@ -242,14 +248,16 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     # ! New way to sample the other anchors, inspired by rbg's implementation
     
     argmax_IoUs = torch.argmax(IoUs, dim=1)
+
+    # Find negative samples first so that positive ones can clobber them
+    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = 0
     
     # Find the anchor as a positive sample with the highest IoU with a gt box
     max_gts = torch.argmax(IoUs, dim=0)
     labels[max_gts] = 1
     
-    # Find other positive and negative samples
-    labels[np.where(torch.any(IoUs > 0.7, dim=1))[0]] = 1
-    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = 0
+    # Find other positive samples
+    labels[np.where(torch.any(IoUs >= 0.7, dim=1))[0]] = 1
     
     # Subsample if we have too many
     inds_p = np.where(labels == 1)[0]
@@ -367,7 +375,8 @@ def sample_proposals(proposals, targets, num_samples=128):
     inds_all = np.append(inds_fg, inds_bg)
     samples = proposals[:, inds_all]
     gt_coords = parameterize(bboxes[:, argmax_IoUs[inds_all]], samples)
-    gt_labels = labels[argmax_IoUs[inds_all]]
+    gt_labels = torch.cat((labels[argmax_IoUs[inds_fg]],
+                           torch.zeros(len(inds_bg), dtype=torch.long, device=device)))
     samples = samples.t()
     gt_coords = gt_coords.t()
     
