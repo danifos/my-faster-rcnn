@@ -282,12 +282,14 @@ def RPN_loss(p, p_s, t, t_s, sigma=3):
     p = p.squeeze().view(2, -1)
     t = t.squeeze().view(4, -1)
     cls_loss = nn.functional.cross_entropy(p.t(), p_s, ignore_index=-1)
-    reg_loss = localization_loss(t, t_s, p_s, 3)
-    print('RPN cls loss: {:.2f}'.format(cls_loss.detach().cpu().numpy()))
-    print('RPN reg loss: {:.2f}'.format(reg_loss.detach().cpu().numpy()))
+    reg_loss = localization_loss(t, t_s, p_s, sigma)
     loss = cls_loss + reg_loss
+
+    _cls_loss = cls_loss.detach().cpu().numpy()
+    _reg_loss = reg_loss.detach().cpu().numpy()
+    print('RPN cls loss: {:.2f}\nRPN reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
     
-    return loss
+    return loss, (_cls_loss, _reg_loss)
 
 
 def RoI_loss(p, u, t, v, sigma=1):
@@ -311,12 +313,14 @@ def RoI_loss(p, u, t, v, sigma=1):
     t_u = t[torch.arange(N), u]
 
     cls_loss = nn.functional.cross_entropy(p, u)
-    reg_loss = localization_loss(t_u.t(), v.t(), u, 1)
-    print('RoI cls loss: {:.2f}'.format(cls_loss.detach().cpu().numpy()))
-    print('RoI reg loss: {:.2f}'.format(reg_loss.detach().cpu().numpy()))
+    reg_loss = localization_loss(t_u.t(), v.t(), u, sigma)
     loss = cls_loss + reg_loss
+
+    _cls_loss = cls_loss.detach().cpu().numpy()
+    _reg_loss = reg_loss.detach().cpu().numpy()
+    print('RoI cls loss: {:.2f}\nRoI reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
     
-    return loss
+    return loss, (_cls_loss, _reg_loss)
 
 
 # %% Utils for parameterization
@@ -384,49 +388,29 @@ def inv_parameterize(t, anchor, dtype=None):
 
 # %% Utils for plotting results
     
-def plot(logdir, acc_summary, loss_summary, tau=200):
-    # plot accuracy
-    smooth = weighted_linear_regression(acc_summary, tau)
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    # plot val accracy
-    plt.plot([pair[0] for pair in acc_summary],
-             [pair[2] for pair in acc_summary],
-             color='#054E9F', linewidth=3, alpha=0.25)
-    plt.plot([pair[0] for pair in smooth],
-             [pair[2] for pair in smooth],
-             color='#054E9F', linewidth=3)
-    # plot train accuracy
-    plt.plot([pair[0] for pair in acc_summary],
-             [pair[1] for pair in acc_summary],
-             color='coral', linewidth=3, alpha=0.25)
-    plt.plot([pair[0] for pair in smooth],
-             [pair[1] for pair in smooth],
-             color='coral', linewidth=3)
-    xlim = plt.xlim()
-    ylim = plt.ylim()
-    plt.plot([-10000,100000], [0,0], linewidth=2, color='grey')
-    plt.plot([0,0], [-1,2], linewidth=2, color='grey')
-    plt.xlim(xlim)
-    plt.ylim([0.6, 1])
-    plt.grid()
-    for axis in ['top','right']:
-        ax.spines[axis].set_linewidth(0)
-    for axis in ['top','bottom','left','right']:
-        ax.spines[axis].set_color('grey')
-    plt.savefig(os.path.join(logdir, 'acc.pdf'), format='pdf')
-    plt.show()
+def plot_summary(logdir, summary, tau=200):
+    # plot number of samplers
+    data = [summary['samples']['rpn'],
+            summary['samples']['roi']]
+    plot_curves([i for i in range(len(data[0]))], data,
+                tau, os.path.join(logdir, 'samples.pdf'))
     
     # plot loss
-    smooth = weighted_linear_regression(loss_summary, tau)
+    data = summary['loss']['total']
+    plot_curves([i for i in range(len(data))], [data],
+                tau, os.path.join(logdir, 'loss.pdf'))
+
+
+def plot_curves(x, Y, tau, filename):
+    colors = ['#054E9F', 'coral']
+    smooth = weighted_linear_regression(
+        np.hstack([np.array(x).reshape((-1,1)), np.array(Y).T]), tau)
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    plt.plot([pair[0] for pair in loss_summary],
-             [pair[1] for pair in loss_summary],
-             color='coral', linewidth=3, alpha=0.25)
-    plt.plot([pair[0] for pair in smooth],
-             [pair[1] for pair in smooth],
-             color='coral', linewidth=3)
+    for i in range(len(Y)):
+        plt.plot(x, Y[i], color=colors[i], linewidth=3, alpha=0.25)
+        plt.plot(x, [pair[i+1] for pair in smooth],
+                 color=colors[i], linewidth=3)
     xlim = plt.xlim()
     ylim = plt.ylim()
     plt.plot([-10000,100000], [0,0], linewidth=2, color='grey')
@@ -438,7 +422,7 @@ def plot(logdir, acc_summary, loss_summary, tau=200):
         ax.spines[axis].set_linewidth(0)
     for axis in ['top','bottom','left','right']:
         ax.spines[axis].set_color('grey')
-    plt.savefig(os.path.join(logdir, 'loss.pdf'), format='pdf')
+    plt.savefig(filename, format='pdf')
     plt.show()
 
 

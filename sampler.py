@@ -124,7 +124,7 @@ class VOCDetection(Dataset):
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
-        self.order = True  # sample images in order for a sanity check
+        self.order = False  # sample images in order for a sanity check
         if self.order:
             self.images.sort()
             self.index = 0
@@ -167,13 +167,6 @@ class VOCDetection(Dataset):
 def transform_image(img, targets, transform):
     # "Rescale the image such that the short side is s=600 pixels"
     width, height = img.width, img.height
-    # if height < width:
-    #     h = 600
-    #     w = int(h/height*width)
-    # else:
-    #     w = 600
-    #     h = int(w/width*height)
-    # img = T.Resize((h, w))(img)
     img = T.Resize(600)(img)
     w, h = img.width, img.height
     
@@ -207,7 +200,6 @@ def create_anchors(img, strip=16):
         - Tensor of anchors of size 4xAxHxW, scale as input
     """
     w, h = img.shape[3], img.shape[2]
-    print('Image size: {} x {}'.format(w, h))
     W, H = w//strip, h//strip  # ! Note that it may be not 16 if the CNN is not vgg16
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     wscale = hscale = strip
@@ -273,7 +265,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     
     samples = parameterize(anchors, bboxes[:, argmax_IoUs])
     
-    return samples, labels
+    return samples, labels, num_t-num_n
 
 
 # %% Proposal creator and sampler
@@ -289,7 +281,7 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
         - y_reg: Regression coodinates output by RPN, of size 1x36xHxW,
           scale as parameterization on anchors (obviously)
         - img: The input image
-        - im_scale: The scale ratio in `transform_iamge()`
+        - im_scale: The scale ratio in `transform_image()`
         - training: Create proposals for training or testing, default by False.
           Ignore the cross-boundary anchors if True,
           which will remove about 2/3 of the anchors.
@@ -308,7 +300,7 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
     
-    # ! Note the correspondance of y_reg and anchors
+    # ! Note the correspondence of y_reg and anchors
     coords = inv_parameterize(y_reg.squeeze().view(4, num_anchors, H, W),
                               anchors)  # corrected coords of anchors, back to input scale
     del anchors  # release memory
@@ -386,5 +378,5 @@ def sample_proposals(proposals, targets, num_samples=128):
     print('{} positive roi samples'.format(min(len(inds_fg), num_fg_total)))
     print('{} negative roi samples'.format(min(len(inds_bg), num_bg_total)))
     
-    return samples, gt_coords, gt_labels
+    return samples, gt_coords, gt_labels, num_fg_total
             

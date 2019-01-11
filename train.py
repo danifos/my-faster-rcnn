@@ -24,10 +24,11 @@ import torchvision.transforms as T
 from sampler import CocoDetection, VOCDetection
 from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
-from utility import RPN_loss, RoI_loss
+from utility import RPN_loss, RoI_loss, plot_summary
 from consts import logdir, model_to_train, dtype, device
-#from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
+# from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir
+from consts import imagenet_norm
 from test import check_mAP
 
 # %% A test of sample_anchors
@@ -38,17 +39,17 @@ from test import check_mAP
 # %% Basic settings
 
 # changed
-num_epochs = 2
+num_epochs = 15
 learning_rate = 3e-3
 weight_decay = 5e-5
-decay_epochs = [0]
+decay_epochs = []
 
 
 # %% COCO dataset
 
 transform = T.Compose([
     T.ToTensor(),
-    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    T.Normalize(**imagenet_norm)
 ])
 
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
@@ -64,11 +65,16 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 #loader_val = DataLoader(coco_val, batch_size=1,
 #                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
 
-num_val = 500
+# num_val = 500
+# loader_train = DataLoader(voc_train, batch_size=1,
+#                            sampler=sampler.SubsetRandomSampler(range(num_val, len(voc_train))))
+# loader_val = DataLoader(voc_val, batch_size=1,
+#                         sampler=sampler.SubsetRandomSampler(range(num_val)))
+
 loader_train = DataLoader(voc_train, batch_size=1,
-                           sampler=sampler.SubsetRandomSampler(range(num_val, len(voc_train))))
+                          sampler=sampler.SubsetRandomSampler(range(100)))
 loader_val = DataLoader(voc_val, batch_size=1,
-                        sampler=sampler.SubsetRandomSampler(range(num_val)))
+                        sampler=sampler.SubsetRandomSampler(range(100)))
 
 
 # %% Initialization
@@ -82,7 +88,7 @@ def init():
     
     for cur, _, files in os.walk('.'):  # check if we have the logdir already
         if cur == os.path.join('.', logdir):  # we've found it
-            # open the summary file, get the stage number
+            # open the summary file
             with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
                 summary_dic = pickle.load(fo, encoding='bytes')
             
@@ -92,7 +98,7 @@ def init():
         os.mkdir(logdir)
     
     files_dic = search_files(files)
-    stage_init(summary_dic, files_dic)
+    return stage_init(summary_dic, files_dic)
 
 
 def search_files(files):
@@ -127,15 +133,15 @@ def search_files(files):
 
 def stage_init(summary_dic, files_dic):
     global model, epoch, step
-    global loss_summary, map_summary
+    global summary
     
     # Load summary
     if summary_dic:
-        loss_summary = summary_dic['loss']
-        map_summary = summary_dic['map']
+        summary = summary_dic
     else:
-        loss_summary = {'train':[], 'val':[]}
-        map_summary = {'train':[], 'val':[]}
+        summary = {'samples':{'rpn':[], 'roi':[]},
+                   'loss':{'single':[], 'total':[]},
+                   'map':{'train':[], 'val':[]}}
     
     # Load model
     model = None
@@ -156,11 +162,13 @@ def stage_init(summary_dic, files_dic):
         
     # move to GPU
     model = model.to(device=device)
+    
+    return model
 
 
 # %% Save
 
-def save_model():
+def save_model(epoch, step):
     filename = os.path.join(logdir, 'param-{}-{}.pth'.format(epoch, step))
     torch.save(model.state_dict(), filename)
         
@@ -171,7 +179,7 @@ def save_model():
 
 def save_summary():
     file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
-    pickle.dump({'loss':loss_summary, 'map':map_summary}, file)
+    pickle.dump(summary, file)
     file.close()
 
 
@@ -184,7 +192,7 @@ def get_optimizer():
                      weight_decay=weight_decay)
 
 
-def train(print_every=100, check_every=10000):
+def train(print_every=1, check_every=10000):
     # ===================  Preparations for debugging  ========================
     tic = time()
     import gc
@@ -215,24 +223,22 @@ def train(print_every=100, check_every=10000):
             # =================================================================
             
             loss = train_step(x, y, optimizer)
-            print('-- loss = {:.4f}\n'.format(loss))
             
-            loss_summary['train'].append((step, loss))
+            summary['loss']['total'].append(loss)
             save_summary()
-            
+
             if step % print_every == 0:
-                print('-- Iteration {it}, loss = {loss:.4f}'.format(
-                        it=step,loss=loss))
-                save_summary()
+                print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
+                    it=step,loss=loss))
             
             if step > 0 and step % check_every == 0:
                 # evaluate the mAP
                 train_mAP = check_mAP(model, loader_train, 100)
-                map_summary['train'].append((step, train_mAP))
+                summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
                 
                 val_mAP = check_mAP(model, loader_val, 100)
-                map_summary['val']
+                summary['map']['val'].append((step, val_mAP))
                 print('val mAP = {:.1f}'.format(100 * val_mAP))
                 
                 save_summary()
@@ -261,35 +267,50 @@ def train_step(x, y, optimizer):
     RPN_cls, RPN_reg = model.RPN(features)
     
     # Sample 256 anchors
-    anchor_samples, labels = sample_anchors(x, y)
+    anchor_samples, labels, nas = sample_anchors(x, y)
     # Compute RPN loss
-    rpn_loss = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
+    rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
     
     # Create about 2000 region proposals
     proposals = create_proposals(RPN_cls, RPN_reg, x, y[0]['scale'][0], training=True)
     # Sample 128 proposals
-    proposal_samples, gt_coords, gt_labels = sample_proposals(proposals, y)
+    proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
     # Get Nx81 classification scores
     # and Nx324 regression coordinates of Fast R-CNN
     RCNN_cls, RCNN_reg = model.RCNN(features, x, proposal_samples)
     # Compute RoI loss, has in-place error if do not use detach()
-    roi_loss = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
+    roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
     
     loss = rpn_loss + roi_loss
     
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    
+
+    summary['samples']['rpn'].append(nas)
+    summary['samples']['roi'].append(nps)
+    summary['loss']['single'].append({'rpn_cls':rpn_cls, 'rpn_reg':rpn_reg,
+                                        'roi_cls':roi_cls, 'roi_reg':roi_reg})
+
     return loss.item()
 
 
 # %% Main
 
+def plot():
+    plot_summary(logdir, summary)
+
+
+def test():
+    train_mAP = check_mAP(model, loader_train, 100)
+    print('train mAP = {:.1f}'.format(100 * train_mAP))
+
+
 def main():
     while True:
         init()
-        if(train()): break
+        if train():
+            break
 
 
 if __name__ == '__main__':

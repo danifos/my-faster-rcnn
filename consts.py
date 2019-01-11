@@ -24,7 +24,7 @@ num_anchors = len(anchor_sizes)
 
 logdir = 'result'
 #stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
-num_classes = 80  # 80 for coco 2017, and 20 for pascal voc 2007
+num_classes = 20  # 80 for coco 2017, and 20 for pascal voc 2007
     
 # These are for MS COCO
 coco_train_data_dir = '/home/user/coco/train2017'
@@ -37,6 +37,9 @@ voc_train_data_dir = '/home/user/VOC2007/Train/JPEGImages'
 voc_train_ann_dir = '/home/user/VOC2007/Train/Annotations'
 voc_test_data_dir = '/home/user/VOC2007/Test/JPEGImages'
 voc_test_ann_dir = '/home/user/VOC2007/Test/Annotations'
+
+# This is for ImageNet (torchvision pretrained model)
+imagenet_norm = {'mean':[0.485, 0.456, 0.406], 'std':[0.229, 0.224, 0.225]}
 
 
 # %% Map from 'category_id' to an index or doing the inverse
