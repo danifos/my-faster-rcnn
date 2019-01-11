@@ -20,34 +20,49 @@ def plot_summary(logdir, summary, tau=200):
     data = [summary['samples']['rpn'],
             summary['samples']['roi']]
     plot_curves([i for i in range(len(data[0]))], data,
-                tau, os.path.join(logdir, 'samples.pdf'))
+                tau, os.path.join(logdir, 'samples.pdf'),
+                legend=['rpn samples', 'roi samples'])
 
     # plot loss
     data = summary['loss']['total']
     plot_curves([i for i in range(len(data))], [data],
                 tau, os.path.join(logdir, 'loss.pdf'))
 
+    # plot 4 losses
+    meta = summary['loss']['single']
+    for t in ('cls', 'reg'):
+        data = [[dic['rpn_'+t], dic['roi_'+t]] for dic in meta]
+        plot_curves([i for i in range(len(data))],
+                    [[data[i][j] for i in range(len(data))]
+                     for j in range(len(data[0]))],
+                    tau, os.path.join(logdir, t+'_losses.pdf'),
+                    legend=['rpn '+t+' loss', 'roi '+t+' loss'])
 
-def plot_curves(x, Y, tau, filename):
+
+def plot_curves(x, Y, tau, filename, legend=None):
     smooth = weighted_linear_regression(
         np.hstack([np.array(x).reshape((-1, 1)), np.array(Y).T]), tau)
     fig = plt.figure()
     ax = fig.add_subplot(111)
+    lines = []
     for i in range(len(Y)):
         line = plt.plot(x, Y[i], linewidth=3, alpha=0.25)[0]
-        plt.plot(x, [pair[i + 1] for pair in smooth],
-                 color=line.get_c(), linewidth=3)
+        line = plt.plot(x, [pair[i + 1] for pair in smooth],
+                        color=line.get_c(), linewidth=3)[0]
+        lines.append(line)
     xlim = plt.xlim()
     ylim = plt.ylim()
     plt.plot([-10000, 100000], [0, 0], linewidth=2, color='grey')
-    plt.plot([0, 0], [-1, 20], linewidth=2, color='grey')
+    plt.plot([0, 0], [-1, 1000], linewidth=2, color='grey')
     plt.xlim(xlim)
-    plt.ylim([ylim[0], int(ylim[1])])
+    plt.ylim([ylim[0], ylim[1]])
     plt.grid()
     for axis in ['top', 'right']:
         ax.spines[axis].set_linewidth(0)
     for axis in ['top', 'bottom', 'left', 'right']:
         ax.spines[axis].set_color('grey')
+    if legend:
+        plt.legend(lines, legend)
     plt.savefig(filename, format='pdf')
     plt.show()
 
