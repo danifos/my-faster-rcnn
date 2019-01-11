@@ -40,13 +40,13 @@ from plot import plot_summary
 # %% Basic settings
 
 # changed
-num_epochs = 50
+num_epochs = 40
 learning_rate = 3e-3
 weight_decay = 5e-5
 decay_epochs = []
 
 # Global variables
-logdir = None
+logdir = ''
 model = None
 epoch = step = None
 summary = None

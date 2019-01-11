@@ -22,8 +22,6 @@ num_anchors = len(anchor_sizes)
 
 # %% consts that apply to all scripts
 
-logdir = 'result'
-#stage_names = ['RPN-1', 'Fast-R-CNN-1', 'RPN-2', 'Fast-R-CNN-2']
 num_classes = 20  # 80 for coco 2017, and 20 for pascal voc 2007
     
 # These are for MS COCO
@@ -55,23 +53,16 @@ for i, d in enumerate(idx2id):
     id2idx[d] = i+1
 
 # This is for Pascal VOC 2007
-voc_names = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
-             'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
+voc_names = ('', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
+             'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
              'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
 name2idx = {}
 for i, name in enumerate(voc_names):
-    name2idx[name] = i+1
-
-
-# %% Define training procedure
-
-model_to_train = [[1, 1, 0],
-                  [1, 0, 1],
-                  [0, 1, 0],
-                  [0, 0, 1]]
+    name2idx[name] = i
 
 
 # %% Basic data type
+
 dtype = torch.float32
 # use GPU
 Tensor = torch.cuda.FloatTensor

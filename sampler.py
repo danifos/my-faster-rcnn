@@ -225,7 +225,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
         - num_p: Expected number of positive anchor samples
         - num_t: Number of samples (batch_size)
     Returns:
-        - samples: Tensor of size 4xAxHxW, denoting the coords of each sample,
+        - samples: Tensor of size 4x(A*H*W), denoting the coords of each sample,
           scale as parameterization on anchors
         - labels: CharTensor of size (A*H*W), denoting the label of each sample
           (1: positive, 0: negative, -1: neither)
@@ -263,7 +263,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     print('{} positive anchor samples'.format(num_t-num_n))
     print('{} negative anchor samples'.format(num_n))
     
-    samples = parameterize(anchors, bboxes[:, argmax_IoUs])
+    samples = parameterize(bboxes[:, argmax_IoUs], anchors)
     
     return samples, labels, num_t-num_n
 

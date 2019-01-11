@@ -62,14 +62,38 @@ def check_AP(x, y, model, verbose):
     """
     Check AP and recall of an image (avoiding memory leak).
     """
+    DEBUG1 = False
+    DEBUG2 = False
+    DEBUG3 = False
+
     x = x.to(device=device, dtype=dtype)
     features = model.CNN(x)
     RPN_cls, RPN_reg = model.RPN(features)
+    if DEBUG1:
+        # Test targets of sample_anchors
+        from sampler import create_anchors, sample_anchors
+        anchor_samples, labels, _ = sample_anchors(x, y)
+        if DEBUG3:
+            # Visualize sampled anchors
+            anchors = create_anchors(x).view(4, -1)
+            anchors = inv_parameterize(anchor_samples, anchors)
+            lst = []
+            for i in range(labels.shape[0]):
+                if labels[i] == 1:
+                    lst.append((anchors[:, i], 1, 0))
+            visualize(x, lst)
+            return np.zeros((num_classes, 2), dtype=np.int64)
+        RPN_reg = anchor_samples.view_as(RPN_reg)
+        zeros = torch.zeros_like(RPN_cls).squeeze().view(2, -1)
+        zeros[0, np.where(labels == 1)[0]] = 1
+        zeros[1, np.where(labels == -1)[0]] = 1
+        RPN_cls = RPN_cls.view_as(RPN_cls)
     # 300 top-ranked proposals at test time
     proposals = create_proposals(RPN_cls, RPN_reg,
                                  x, y[0]['scale'][0], training=False)
-    # give the true bounding box directly
-    # proposals = torch.cuda.FloatTensor([t['bbox'] for t in y]).t()
+    if DEBUG2:
+        # give the true bounding box directly
+        proposals = torch.cuda.FloatTensor([t['bbox'] for t in y]).t()
 
     RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
     N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
@@ -77,6 +101,8 @@ def check_AP(x, y, model, verbose):
     roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
     proposals = proposals.unsqueeze(2).expand_as(roi_coords)
     roi_coords = inv_parameterize(roi_coords, proposals)
+    if DEBUG1:
+        roi_coords = proposals
     
     roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
     lst = []  # list of predicted tuple (bbox, confidence, class idx)
@@ -108,7 +134,7 @@ def visualize(x, results):
                           edgeColor=np.random.uniform(size=(3)), fill=False)
         )
         plt.text(bbox[0], bbox[1]+12,
-                 '{}: {:.2f}'.format(voc_names[idx-1], confidence),
+                 '{}: {:.2f}'.format(voc_names[idx], confidence),
                  bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
 
