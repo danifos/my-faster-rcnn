@@ -24,12 +24,13 @@ import torchvision.transforms as T
 from sampler import CocoDetection, VOCDetection
 from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
-from utility import RPN_loss, RoI_loss, plot_summary
+from utility import RPN_loss, RoI_loss
 from consts import logdir, model_to_train, dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir
 from consts import imagenet_norm
 from test import evaluate
+from plot import plot_summary
 
 # %% A test of sample_anchors
 #from line_profiler import LineProfiler
@@ -43,6 +44,11 @@ num_epochs = 20
 learning_rate = 3e-3
 weight_decay = 5e-5
 decay_epochs = []
+
+# Global variables
+model = None
+epoch = step = learning_rate = None
+summary = None
 
 
 # %% COCO dataset
@@ -99,7 +105,7 @@ def init():
         os.mkdir(logdir)
 
     files_dic = search_files(files)
-    return stage_init(summary_dic, files_dic)
+    stage_init(summary_dic, files_dic)
 
 
 def search_files(files):
@@ -168,8 +174,6 @@ def stage_init(summary_dic, files_dic):
         
     # move to GPU
     model = model.to(device=device)
-    
-    return model
 
 
 # %% Save
@@ -240,11 +244,11 @@ def train(print_every=1, check_every=10000):
             
             if step > 0 and step % check_every == 0:
                 # evaluate the mAP
-                train_mAP = evaluate(model, loader_train, 100)
+                train_mAP, _ = evaluate(model, loader_train, 100)
                 summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
                 
-                val_mAP = evaluate(model, loader_val, 100)
+                val_mAP, _ = evaluate(model, loader_val, 100)
                 summary['map']['val'].append((step, val_mAP))
                 print('val mAP = {:.1f}'.format(100 * val_mAP))
                 
@@ -309,7 +313,7 @@ def plot():
 
 
 def test():
-    train_mAP = check_mAP(model, loader_train, 100)
+    train_mAP, recall = evaluate(model, loader_train, 100)
     print('train mAP = {:.1f}'.format(100 * train_mAP))
 
 

@@ -6,9 +6,7 @@ Created on Tue Nov  6 11:30:00 2018
 @author: Ruijie Ni
 """
 
-import gc
 from time import time
-import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -25,7 +23,7 @@ def predict(model, img):
     pass
 
 
-def evaluate(model, loader, total_batches=0):
+def evaluate(model, loader, total_batches=0, verbose=False):
     """
     Check mAP and recall of a dataset.
     
@@ -45,7 +43,7 @@ def evaluate(model, loader, total_batches=0):
     for x, y in loader:
         if len(y) == 0:
             continue
-        AP += check_AP(x, y, model)
+        AP += check_AP(x, y, model, verbose)
         num_targets += len(y)
         print('AP:', np.sum(AP[:,0]), '/', np.sum(AP[:,1]))
 
@@ -60,7 +58,7 @@ def evaluate(model, loader, total_batches=0):
     return mAP, recall
 
 
-def check_AP(x, y, model):
+def check_AP(x, y, model, verbose):
     """
     Check AP and recall of an image (avoiding memory leak).
     """
@@ -77,7 +75,6 @@ def check_AP(x, y, model):
     N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
     roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
     roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
-    print(roi_coords)
     proposals = proposals.unsqueeze(2).expand_as(roi_coords)
     roi_coords = inv_parameterize(roi_coords, proposals)
     
@@ -92,7 +89,8 @@ def check_AP(x, y, model):
         
     results = _NMS(lst)
 
-    visualize(x, results)
+    if verbose:
+        visualize(x, results)
     
     return average_precision(results, y)
 
@@ -124,11 +122,12 @@ def init(logdir):
 
 
 def main():
+    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
     args = parser.parse_args()
     model, loader = init(args.logdir)
-    mAP, recall = evaluate(model, loader, 100)
+    mAP, recall = evaluate(model, loader, 100, True)
     print('\nmAP: {:.1f}, recall: {:.1f}'.
           format(100 * mAP, 100 * recall))
 
