@@ -8,9 +8,6 @@ Created on Wed Nov 21 22:18:24 2018
 
 # %% Evaluation on Pascal VOC 2007, using others pre-trained model
 
-import consts
-consts.num_classes = 20
-
 from time import time
 
 import torch
@@ -20,8 +17,9 @@ import torchvision.transforms as T
 
 from faster_r_cnn import FasterRCNN
 from sampler import VOCDetection
-from consts import test_data_dir, test_ann_dir, device
-from test import check_mAP
+from consts import voc_train_data_dir, voc_train_ann_dir
+from consts import imagenet_norm, device
+from test import evaluate
 
 
 def main():
@@ -29,9 +27,9 @@ def main():
     # %% Dataset
     transform = T.Compose([
         T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        T.Normalize(**imagenet_norm)
     ])
-    voc_test = VOCDetection(root=test_data_dir, ann=test_ann_dir, transform=transform)
+    voc_test = VOCDetection(voc_train_data_dir, voc_train_ann_dir, transform=transform)
     loader_test = DataLoader(voc_test, batch_size=1,
                              sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
     
@@ -84,7 +82,7 @@ def main():
     for old_name, new_name in pairs:
         params[new_name] = params.pop(old_name)
     
-    model = FasterRCNN({}, pretrained=False)
+    model = FasterRCNN({})
     model.load_state_dict(params)
     model.to(device=device)
     
@@ -92,7 +90,7 @@ def main():
     
     tic = time()
     
-    mAP = check_mAP(model, loader_test)
+    mAP = evaluate(model, loader_test, verbose=True)
     print('mAP: {:.1f}'.format(mAP*100))
     
     toc = time()
@@ -105,4 +103,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+

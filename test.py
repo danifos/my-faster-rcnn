@@ -62,9 +62,10 @@ def check_AP(x, y, model, verbose):
     """
     Check AP and recall of an image (avoiding memory leak).
     """
-    DEBUG1 = False
+    DEBUG1 = True
     DEBUG2 = False
     DEBUG3 = False
+    DEBUG4 = False
 
     x = x.to(device=device, dtype=dtype)
     features = model.CNN(x)
@@ -101,7 +102,8 @@ def check_AP(x, y, model, verbose):
     roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
     proposals = proposals.unsqueeze(2).expand_as(roi_coords)
     roi_coords = inv_parameterize(roi_coords, proposals)
-    if DEBUG1:
+    if DEBUG4:
+        # Regardless of regression of Fast R-CNN
         roi_coords = proposals
     
     roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets

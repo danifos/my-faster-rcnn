@@ -81,7 +81,7 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 # loader_val = DataLoader(voc_val, batch_size=1,
 #                         sampler=sampler.SubsetRandomSampler(range(num_val)))
 
-num_train = 5
+num_train = 500
 loader_train = DataLoader(voc_train, batch_size=1,
                           sampler=sampler.SubsetRandomSampler(range(num_train)))
 loader_val = DataLoader(voc_val, batch_size=1,
@@ -204,7 +204,7 @@ def get_optimizer():
                      weight_decay=weight_decay)
 
 
-def train(print_every=1, check_every=10000, save_every=1):
+def train(print_every=1, check_every=10000, save_every=5):
     # ===================  Preparations for debugging  ========================
     tic = time()
     import gc
@@ -324,13 +324,13 @@ def test():
 
 def main():
     import argparse
+    global logdir, num_epochs
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
-    parser.add_argument('--epochs', type=int, default=num_epochs)
+    parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
     args = parser.parse_args()
-    global logdir, num_epochs
     logdir = args.logdir
-    num_epochs = parser.epochs
+    num_epochs = args.epochs
 
     while True:
         init()
