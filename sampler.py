@@ -286,8 +286,7 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
           Ignore the cross-boundary anchors if True,
           which will remove about 2/3 of the anchors.
     Returns:
-        - List of proposals that will be fed into the Fast R-CNN.
-          scale as input. Should be of length 2000
+        - Tensor of proposals, size 4xN
     """
     # Get number of proposals by training
     pre_nms_num = 12000 if training else 6000

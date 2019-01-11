@@ -29,7 +29,7 @@ from consts import logdir, model_to_train, dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir
 from consts import imagenet_norm
-from test import check_mAP
+from test import evaluate
 
 # %% A test of sample_anchors
 #from line_profiler import LineProfiler
@@ -39,7 +39,7 @@ from test import check_mAP
 # %% Basic settings
 
 # changed
-num_epochs = 15
+num_epochs = 20
 learning_rate = 3e-3
 weight_decay = 5e-5
 decay_epochs = []
@@ -71,10 +71,11 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 # loader_val = DataLoader(voc_val, batch_size=1,
 #                         sampler=sampler.SubsetRandomSampler(range(num_val)))
 
+num_train = 5
 loader_train = DataLoader(voc_train, batch_size=1,
-                          sampler=sampler.SubsetRandomSampler(range(100)))
+                          sampler=sampler.SubsetRandomSampler(range(num_train)))
 loader_val = DataLoader(voc_val, batch_size=1,
-                        sampler=sampler.SubsetRandomSampler(range(100)))
+                        sampler=sampler.SubsetRandomSampler(range(num_train)))
 
 
 # %% Initialization
@@ -85,18 +86,18 @@ def init():
     """
     files = None
     summary_dic = None
-    
+
     for cur, _, files in os.walk('.'):  # check if we have the logdir already
-        if cur == os.path.join('.', logdir):  # we've found it
+        if cur == os.path.join('.', logdir).rstrip('/'):  # we've found it
             # open the summary file
             with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
                 summary_dic = pickle.load(fo, encoding='bytes')
-            
+
             break
         
     else:  # there's not, make one
         os.mkdir(logdir)
-    
+
     files_dic = search_files(files)
     return stage_init(summary_dic, files_dic)
 
@@ -110,7 +111,7 @@ def search_files(files):
     """
     dic = {}
     # find the latest checkpoint files for each presisting stage (.pkl)
-    prefix, suffix = 'param-', '.pkl'
+    prefix, suffix = 'param-', '.pth'
     for ckpt in files:
         if not (ckpt.startswith(prefix) and ckpt.endswith(suffix)): continue
         info = ckpt[ckpt.find(prefix)+len(prefix) : ckpt.rfind(suffix)]
@@ -127,7 +128,12 @@ def search_files(files):
             dic['filename'] = os.path.join(logdir, ckpt)
             dic['epoch'] = e
             dic['step'] = s
-    
+
+    if dic:
+        print('Found latest params in file {}'.format(dic['filename']))
+    else:
+        print('No params was found')
+
     return dic
 
 
@@ -146,7 +152,7 @@ def stage_init(summary_dic, files_dic):
     # Load model
     model = None
     params = {}
-    
+
     if files_dic:
         # Load some checkpoint files (if any)
         params = files_dic['filename']
@@ -173,8 +179,9 @@ def save_model(epoch, step):
     torch.save(model.state_dict(), filename)
         
     print('Saved model successfully')
-    print('Next epoch will start 60s later')
-    sleep(60)
+    sleep_time = 5
+    print('Next epoch will start {:d}s later'.format(sleep_time))
+    sleep(sleep_time)
 
 
 def save_summary():
@@ -233,11 +240,11 @@ def train(print_every=1, check_every=10000):
             
             if step > 0 and step % check_every == 0:
                 # evaluate the mAP
-                train_mAP = check_mAP(model, loader_train, 100)
+                train_mAP = evaluate(model, loader_train, 100)
                 summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
                 
-                val_mAP = check_mAP(model, loader_val, 100)
+                val_mAP = evaluate(model, loader_val, 100)
                 summary['map']['val'].append((step, val_mAP))
                 print('val mAP = {:.1f}'.format(100 * val_mAP))
                 

@@ -25,9 +25,9 @@ def predict(model, img):
     pass
 
 
-def check_mAP(model, loader, total_batches=0):
+def evaluate(model, loader, total_batches=0):
     """
-    Check mAP of a dataset.
+    Check mAP and recall of a dataset.
     
     Inputs:
         - model: The Faster R-CNN model
@@ -38,6 +38,7 @@ def check_mAP(model, loader, total_batches=0):
         - mAP: A single number
     """
     AP = np.zeros((num_classes, 2), dtype=np.int64)
+    num_targets = 0
     num_batches = 0
     
     model.eval()
@@ -45,19 +46,23 @@ def check_mAP(model, loader, total_batches=0):
         if len(y) == 0:
             continue
         AP += check_AP(x, y, model)
+        num_targets += len(y)
         print('AP:', np.sum(AP[:,0]), '/', np.sum(AP[:,1]))
 
         num_batches += 1
         if num_batches == total_batches:
             break
     
-    AP[:,1] = np.maximum(AP[:,1], 1)  # avoid the case that AP[1] == 0 (now 0/0=0)
-    return np.mean(AP[:,0] / AP[:,1])
+    inds = np.where(AP[:,1] > 0)[0]  # avoid the case that AP[1] == 0
+    mAP = np.mean(AP[inds,0] / AP[inds,1])
+    recall = np.sum(AP[:,0]) / num_targets
+
+    return mAP, recall
 
 
 def check_AP(x, y, model):
     """
-    Check AP of an image (avoiding memory leak).
+    Check AP and recall of an image (avoiding memory leak).
     """
     x = x.to(device=device, dtype=dtype)
     features = model.CNN(x)
@@ -65,11 +70,14 @@ def check_AP(x, y, model):
     # 300 top-ranked proposals at test time
     proposals = create_proposals(RPN_cls, RPN_reg,
                                  x, y[0]['scale'][0], training=False)
+    # give the true bounding box directly
+    # proposals = torch.cuda.FloatTensor([t['bbox'] for t in y]).t()
 
     RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
     N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
     roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
     roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
+    print(roi_coords)
     proposals = proposals.unsqueeze(2).expand_as(roi_coords)
     roi_coords = inv_parameterize(roi_coords, proposals)
     
@@ -83,8 +91,13 @@ def check_AP(x, y, model):
             lst.append((bbox, confidence, idx))
         
     results = _NMS(lst)
+
+    visualize(x, results)
     
-    # ========================== Visualization ================================
+    return average_precision(results, y)
+
+
+def visualize(x, results):
     mean = np.array(imagenet_norm['mean'])
     std = np.array(imagenet_norm['std'])
     img = x.detach().cpu().squeeze().numpy().transpose((1,2,0)) * std + mean
@@ -100,9 +113,6 @@ def check_AP(x, y, model):
                  '{}: {:.2f}'.format(voc_names[idx-1], confidence),
                  bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
-    # =========================================================================
-    
-    return average_precision(results, y)
 
 # %% Main
 
@@ -110,8 +120,7 @@ def init(logdir):
     import train
     train.logdir = logdir
     model = train.init()
-    mAP = check_mAP(model, train.loader_train, 100)
-    print('\nmAP is {.:1f}'.format(100 * mAP))
+    return model, train.loader_train
 
 
 def main():
@@ -119,7 +128,9 @@ def main():
     parser.add_argument('--logdir', type=str, default='result')
     args = parser.parse_args()
     model, loader = init(args.logdir)
-    check_mAP(model, loader, 100)
+    mAP, recall = evaluate(model, loader, 100)
+    print('\nmAP: {:.1f}, recall: {:.1f}'.
+          format(100 * mAP, 100 * recall))
 
 
 if __name__ == '__main__':

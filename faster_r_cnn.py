@@ -143,9 +143,11 @@ class FasterRCNN(nn.Module):
         
         if params:
             # Load parameters
+            print('Loaded pre-trained model')
             self.load_state_dict(torch.load(params))
         else:
             # And randomize the parameters otherwise
+            print('Initialized model randomly')
             for child in self.submodules[1:]:
                 child.weight_init()
         
