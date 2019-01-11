@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/user/.conda/envs/deep-learning/bin/python
 # -*- coding: utf-8 -*-
 """
 Created on Tue Nov  6 11:30:00 2018
@@ -112,13 +112,14 @@ def visualize(x, results):
                  bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
 
+
 # %% Main
 
 def init(logdir):
     import train
     train.logdir = logdir
-    model = train.init()
-    return model, train.loader_train
+    train.init()
+    return train.model, train.loader_train
 
 
 def main():

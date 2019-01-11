@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/user/.conda/envs/deep-learning/bin/python
 # -*- coding: utf-8 -*-
 """
 Created on Tue Oct 16 23:47:16 2018
@@ -25,7 +25,7 @@ from sampler import CocoDetection, VOCDetection
 from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
 from utility import RPN_loss, RoI_loss
-from consts import logdir, model_to_train, dtype, device
+from consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir
 from consts import imagenet_norm
@@ -40,14 +40,15 @@ from plot import plot_summary
 # %% Basic settings
 
 # changed
-num_epochs = 20
+num_epochs = 50
 learning_rate = 3e-3
 weight_decay = 5e-5
 decay_epochs = []
 
 # Global variables
+logdir = None
 model = None
-epoch = step = learning_rate = None
+epoch = step = None
 summary = None
 
 
@@ -183,7 +184,7 @@ def save_model(epoch, step):
     torch.save(model.state_dict(), filename)
         
     print('Saved model successfully')
-    sleep_time = 5
+    sleep_time = 0
     print('Next epoch will start {:d}s later'.format(sleep_time))
     sleep(sleep_time)
 
@@ -318,6 +319,13 @@ def test():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--logdir', type=str, default='result')
+    args = parser.parse_args()
+    global logdir
+    logdir = args.logdir
+
     while True:
         init()
         if train():

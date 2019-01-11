@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/user/.conda/envs/deep-learning/bin/python
 # -*- coding: utf-8 -*-
 """
 Created on Fri Jan 11 14:50:47 2019
@@ -55,7 +55,7 @@ def plot_curves(x, Y, tau, filename, legend=None):
     plt.plot([-10000, 100000], [0, 0], linewidth=2, color='grey')
     plt.plot([0, 0], [-1, 1000], linewidth=2, color='grey')
     plt.xlim(xlim)
-    plt.ylim([ylim[0], ylim[1]])
+    plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))])
     plt.grid()
     for axis in ['top', 'right']:
         ax.spines[axis].set_linewidth(0)
