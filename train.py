@@ -81,7 +81,7 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 # loader_val = DataLoader(voc_val, batch_size=1,
 #                         sampler=sampler.SubsetRandomSampler(range(num_val)))
 
-num_train = 500
+num_train = len(voc_train)
 loader_train = DataLoader(voc_train, batch_size=1,
                           sampler=sampler.SubsetRandomSampler(range(num_train)))
 loader_val = DataLoader(voc_val, batch_size=1,
@@ -327,6 +327,7 @@ def main():
     global logdir, num_epochs
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
+    parser.add_argument('-s', '--save_every', type=int, default=5)
     parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
     args = parser.parse_args()
     logdir = args.logdir
@@ -334,7 +335,7 @@ def main():
 
     while True:
         init()
-        if train():
+        if train(save_every=args.save_every):
             break
     save_model(epoch, step)
 

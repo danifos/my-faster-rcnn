@@ -62,7 +62,7 @@ def check_AP(x, y, model, verbose):
     """
     Check AP and recall of an image (avoiding memory leak).
     """
-    DEBUG1 = True
+    DEBUG1 = False
     DEBUG2 = False
     DEBUG3 = False
     DEBUG4 = False
@@ -154,9 +154,11 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
+    parser.add_argument('-v', '--verbose',
+                        action="store_true", default=False)
     args = parser.parse_args()
     model, loader = init(args.logdir)
-    mAP, recall = evaluate(model, loader, 100, True)
+    mAP, recall = evaluate(model, loader, 100, args.verbose)
     print('\nmAP: {:.1f}, recall: {:.1f}'.
           format(100 * mAP, 100 * recall))
 

@@ -76,7 +76,7 @@ class XMLHandler(xml.sax.ContentHandler):
     def __init__(self, targets):
         self.targets = targets
         self.cur = ''
-        self.depth =0
+        self.depth = 0
 
     def startElement(self, tag, attr):
         self.depth += 1
@@ -255,16 +255,18 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     # Subsample if we have too many
     inds_p = np.where(labels == 1)[0]
     if len(inds_p) > num_p:
-        labels[np.random.choice(inds_p, len(inds_p)-num_p, replace=False)] = -1
-    num_n = num_t - torch.sum(labels == 1).detach().cpu().numpy()
+        labels[inds_p] = -1
+        labels[np.random.choice(inds_p, num_p, replace=False)] = 1
+    num_n = num_t - min(len(inds_p), num_p)
     inds_n = np.where(labels == 0)[0]
     if len(inds_n) > num_n:
-        labels[np.random.choice(inds_n, len(inds_n)-num_n, replace=False)] = -1
+        labels[inds_n] = -1
+        labels[np.random.choice(inds_n, num_n, replace=False)] = 0
     print('{} positive anchor samples'.format(num_t-num_n))
     print('{} negative anchor samples'.format(num_n))
     
     samples = parameterize(bboxes[:, argmax_IoUs], anchors)
-    
+
     return samples, labels, num_t-num_n
 
 
@@ -295,15 +297,14 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     # 1. Generate proposals from bbox deltas and shifted anchors
     H, W = y_cls.shape[2:]
     
-    anchors = create_anchors(img)
+    anchors = create_anchors(img).view(4, -1)
     
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
     
     # ! Note the correspondence of y_reg and anchors
-    coords = inv_parameterize(y_reg.squeeze().view(4, num_anchors, H, W),
+    coords = inv_parameterize(y_reg.squeeze().view(4, -1),
                               anchors)  # corrected coords of anchors, back to input scale
     del anchors  # release memory
-    coords = coords.view(4, -1)
     
     # 2. clip predicted boxes to image
     coords = clip_box(coords, img.shape[3], img.shape[2])

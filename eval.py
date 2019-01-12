@@ -89,8 +89,8 @@ def main():
     # %% Start evaluation through MS COCO val 2017
     
     tic = time()
-    
-    mAP = evaluate(model, loader_test, verbose=True)
+
+    mAP, recall = evaluate(model, loader_test, verbose=True)
     print('mAP: {:.1f}'.format(mAP*100))
     
     toc = time()

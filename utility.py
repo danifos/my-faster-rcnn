@@ -143,19 +143,21 @@ def NMS(coords, scores, pre_n, post_n, threshold=0.7):
     _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
     indices = indices[:pre_n]
     lst = coords[:, indices]
-    #IoUs = IoU(lst, lst)
     N = lst.shape[1]
     ret = []
     det = torch.ones(N, dtype=torch.uint8, device=device)
+    # batch_size=512
     
     for i in range(N):
         if len(ret) == post_n:
             break
+        # if i % batch_size == 0:
+        #     IoUs = IoU(lst[:,i:i+batch_size], lst)
         if det[i]:
             ret.append(lst[:,i])
             det &= (IoU(lst[:,i:i+1], lst)[0] < threshold)
-            #det &= (IoUs[i] < threshold)
-                    
+            # det &= (IoUs[i % batch_size] < threshold)
+
     ret = torch.stack(ret, dim=1)
     return ret
 
@@ -235,9 +237,10 @@ def smooth_L1(x, t, in_weight, sigma):
         - loss: Tensor scalar
     """
     s2 = sigma**2
-    diff = torch.abs(in_weight * (x-t))
-    mask = (diff < 1/s2).float()
-    loss = mask * (s2/2) * diff**2 + (1-mask) * (diff - 1/(s2*2))
+    diff = in_weight * (x-t)
+    abs_diff = diff.abs()
+    mask = (abs_diff < 1/s2).float()
+    loss = mask * (s2/2) * diff**2 + (1-mask) * (abs_diff - 1/(s2*2))
     return loss.sum()
 
 
