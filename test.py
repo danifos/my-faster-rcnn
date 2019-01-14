@@ -17,6 +17,7 @@ from utility import _NMS, inv_parameterize, average_precision
 from consts import num_classes
 from consts import dtype, device, voc_names
 from consts import imagenet_norm
+from consts import bbox_normalize_means, bbox_normalize_stds
 
 def predict(model, img):
     """Predict the bounding boxes in an image"""
@@ -100,6 +101,8 @@ def check_AP(x, y, model, verbose):
     N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
     roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
     roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
+    roi_coords = roi_coords * bbox_normalize_stds.view(4,1,1) \
+                            + bbox_normalize_means.view(4,1,1)
     proposals = proposals.unsqueeze(2).expand_as(roi_coords)
     roi_coords = inv_parameterize(roi_coords, proposals)
     if DEBUG4:
@@ -143,11 +146,22 @@ def visualize(x, results):
 
 # %% Main
 
-def init(logdir):
+def init(logdir, test_set):
     import train
     train.logdir = logdir
     train.init()
-    return train.model, train.loader_train
+    loader = None
+    if test_set:
+        from torch.utils.data import DataLoader, sampler
+        from sampler import VOCDetection
+        from consts import voc_test_data_dir, voc_test_ann_dir
+        voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
+                                transform=train.transform)
+        loader = DataLoader(voc_test, batch_size=1,
+                          sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
+    else:
+        loader = train.loader_train
+    return train.model, loader
 
 
 def main():
@@ -155,9 +169,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
     parser.add_argument('-v', '--verbose',
-                        action="store_true", default=False)
+                        action='store_true', default=False)
+    parser.add_argument('-t', '--test_set',
+                        action='store_true', default=False)
     args = parser.parse_args()
-    model, loader = init(args.logdir)
+    model, loader = init(args.logdir, args.test_set)
     mAP, recall = evaluate(model, loader, 100, args.verbose)
     print('\nmAP: {:.1f}, recall: {:.1f}'.
           format(100 * mAP, 100 * recall))

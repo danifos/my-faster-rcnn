@@ -237,7 +237,6 @@ def train(print_every=1, check_every=10000, save_every=5):
             loss = train_step(x, y, optimizer)
 
             summary['loss']['total'].append(loss)
-            save_summary()
 
             if step % print_every == 0:
                 print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
@@ -259,6 +258,7 @@ def train(print_every=1, check_every=10000, save_every=5):
 
         # save model
         if (e+1) % save_every == 0:
+            save_summary()
             save_model(e, step)
             sleep_time = 0
             print('Next epoch will start {:d}s later'.format(sleep_time))

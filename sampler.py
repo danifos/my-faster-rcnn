@@ -20,6 +20,7 @@ from PIL import Image
 from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
 from consts import Tensor, LongTensor, dtype, device
+from consts import bbox_normalize_means, bbox_normalize_stds
 
 import line_profiler
         
@@ -374,9 +375,10 @@ def sample_proposals(proposals, targets, num_samples=128):
                            torch.zeros(len(inds_bg), dtype=torch.long, device=device)))
     samples = samples.t()
     gt_coords = gt_coords.t()
+    gt_coords = (gt_coords - bbox_normalize_means.view(1,4)) \
+                           / bbox_normalize_stds.view(1,4)
     
     print('{} positive roi samples'.format(min(len(inds_fg), num_fg_total)))
     print('{} negative roi samples'.format(min(len(inds_bg), num_bg_total)))
     
     return samples, gt_coords, gt_labels, num_fg_total
-            

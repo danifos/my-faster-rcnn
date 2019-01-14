@@ -68,3 +68,9 @@ dtype = torch.float32
 Tensor = torch.cuda.FloatTensor
 LongTensor = torch.cuda.LongTensor
 device = torch.device('cuda')
+
+
+# %% More configs
+
+bbox_normalize_means = Tensor((0.0, 0.0, 0.0, 0.0))
+bbox_normalize_stds = Tensor((0.1, 0.1, 0.2, 0.2))
