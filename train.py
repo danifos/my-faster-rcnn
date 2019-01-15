@@ -36,10 +36,10 @@ from plot import plot_summary
 # %% Basic settings
 
 # changed
-num_epochs = 15
+num_epochs = 16
 learning_rate = 1e-3
 weight_decay = 5e-5
-decay_epochs = [60]
+decay_epochs = []
 
 # Global variables
 logdir = ''
@@ -74,7 +74,7 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 # loader_val = DataLoader(voc_val, batch_size=1,
 #                         sampler=sampler.SubsetRandomSampler(range(num_val)))
 
-num_train = len(voc_train)
+num_train = 5#len(voc_train)
 loader_train = DataLoader(voc_train, batch_size=1,
                           sampler=sampler.SubsetRandomSampler(range(num_train)))
 loader_val = DataLoader(voc_val, batch_size=1,
@@ -167,6 +167,11 @@ def stage_init(summary_dic, files_dic):
         epoch = 0
         step = 0
 
+    # Pass decay epochs
+    for e in decay_epochs:
+        if e <= epoch:
+            lr_decay()
+
     model = FasterRCNN(params)
 
     # move to GPU
@@ -197,11 +202,18 @@ def get_optimizer():
                      weight_decay=weight_decay)
 
 
+def lr_decay(decay=10):
+    global learning_rate
+    print('Learning rate: {:.1e} -> {:.1e}'.
+          format(learning_rate, learning_rate / decay))
+    learning_rate /= decay
+
+
 def train(print_every=1, check_every=10000, save_every=5):
     # ===================  Preparations for debugging  ========================
     tic = time()
     # =========================================================================
-    global model, epoch, step, learning_rate
+    global model, epoch, step
 
     optimizer = get_optimizer()
 
@@ -249,11 +261,10 @@ def train(print_every=1, check_every=10000, save_every=5):
             sleep(sleep_time)
 
         if e+1 in decay_epochs:
+            save_summary()
             save_model(e, step)
             epoch = e+1
-            print('Learning rate: {:.1e} -> {:.1e}'.
-                  format(learning_rate, learning_rate/10))
-            learning_rate /= 10
+            lr_decay()
             return False
 
     return True
@@ -311,17 +322,23 @@ def test():
 
 def main():
     import argparse
-    global logdir, num_epochs
+    global logdir, num_epochs, decay_epochs
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
     parser.add_argument('-s', '--save_every', type=int, default=5)
     parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
+    parser.add_argument('-d', '--decay_epochs', type=str, default='12')
+
     args = parser.parse_args()
     logdir = args.logdir
     num_epochs = args.epochs
+    decay_epochs = eval(args.decay_epochs)
+    if type(decay_epochs) == int:
+        decay_epochs = [decay_epochs]
 
+    init()
     while True:
-        init()
         if train(save_every=args.save_every):
             break
     save_model(epoch, step)
