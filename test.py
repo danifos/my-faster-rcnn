@@ -65,7 +65,7 @@ def check_AP(x, y, model, verbose):
     """
     DEBUG1 = False
     DEBUG2 = False
-    DEBUG3 = True
+    DEBUG3 = False
     DEBUG4 = False
 
     x = x.to(device=device, dtype=dtype)
@@ -75,7 +75,7 @@ def check_AP(x, y, model, verbose):
         # Test targets of sample_anchors
         from sampler import create_anchors, sample_anchors
         anchor_samples, labels, _ = sample_anchors(x, y)
-        if DEBUG3:
+        if False and DEBUG3:
             # Visualize sampled anchors
             anchors = create_anchors(x).view(4, -1)
             anchors = inv_parameterize(anchor_samples, anchors)
@@ -85,11 +85,11 @@ def check_AP(x, y, model, verbose):
                     lst.append((anchors[:, i], 1, 0))
             visualize(x, lst, label=False)
             return np.zeros((num_classes, 2), dtype=np.int64)
-        RPN_reg = anchor_samples.view_as(RPN_reg)
+        RPN_reg = anchor_samples.view_as(RPN_reg)  # Replace RPN_reg with gt
         zeros = torch.zeros_like(RPN_cls).squeeze().view(2, -1)
         zeros[0, np.where(labels == 1)[0]] = 1
         zeros[1, np.where(labels == -1)[0]] = 1
-        RPN_cls = RPN_cls.view_as(RPN_cls)
+        RPN_cls = zeros.view_as(RPN_cls)  # Replace RPN_cls with gt
     # 300 top-ranked proposals at test time
     proposals = create_proposals(RPN_cls, RPN_reg,
                                  x, y[0]['scale'][0], training=False)
@@ -141,7 +141,7 @@ def visualize(x, results, label=True):
     for result in results:
         bbox, confidence, idx = result
         bbox = bbox.detach().cpu().numpy()
-        color = np.random.randn(3) if label else (1, 0, 0)
+        color = np.random.uniform(size=3)  # if label else (1, 0, 0)
         plt.gca().add_patch(
             plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
                           edgeColor=color, fill=False)

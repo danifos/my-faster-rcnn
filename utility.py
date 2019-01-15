@@ -140,7 +140,7 @@ def NMS(coords, scores, pre_n, post_n, threshold=0.7, batch_size=512):
     Returns:
         - ret: Tensor of selected bounding boxes, size (4xM)
     """
-    _, indices = torch.sort(scores[0,:], descending=True)  # sort the p-scores
+    _, indices = torch.sort(scores[1,:], descending=True)  # sort the p-scores
     indices = indices[:pre_n]
     lst = coords[:, indices]
     N = lst.shape[1]
@@ -163,7 +163,7 @@ def NMS(coords, scores, pre_n, post_n, threshold=0.7, batch_size=512):
 
 def NMS_lm(coords, scores, pre_n, post_n, threshold=0.7):
     """Low memory version of NMS()"""
-    _, indices = torch.sort(scores[0,:], descending=True)
+    _, indices = torch.sort(scores[1,:], descending=True)
     indices = indices[:pre_n]
     lst = coords[:, indices]
     N = lst.shape[1]
