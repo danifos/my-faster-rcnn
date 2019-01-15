@@ -65,7 +65,7 @@ def check_AP(x, y, model, verbose):
     """
     DEBUG1 = False
     DEBUG2 = False
-    DEBUG3 = False
+    DEBUG3 = True
     DEBUG4 = False
 
     x = x.to(device=device, dtype=dtype)
@@ -83,7 +83,7 @@ def check_AP(x, y, model, verbose):
             for i in range(labels.shape[0]):
                 if labels[i] == 1:
                     lst.append((anchors[:, i], 1, 0))
-            visualize(x, lst)
+            visualize(x, lst, label=False)
             return np.zeros((num_classes, 2), dtype=np.int64)
         RPN_reg = anchor_samples.view_as(RPN_reg)
         zeros = torch.zeros_like(RPN_cls).squeeze().view(2, -1)
@@ -93,6 +93,13 @@ def check_AP(x, y, model, verbose):
     # 300 top-ranked proposals at test time
     proposals = create_proposals(RPN_cls, RPN_reg,
                                  x, y[0]['scale'][0], training=False)
+    if DEBUG3:
+        # Visualize all proposals
+        lst = []
+        for i in range(proposals.shape[1]):
+            lst.append((proposals[:, i], 1, 0))
+        visualize(x, lst, label=False)
+        return np.zeros((num_classes, 2), dtype=np.int64)
     if DEBUG2:
         # give the true bounding box directly
         proposals = torch.cuda.FloatTensor([t['bbox'] for t in y]).t()
@@ -126,7 +133,7 @@ def check_AP(x, y, model, verbose):
     return average_precision(results, y)
 
 
-def visualize(x, results):
+def visualize(x, results, label=True):
     mean = np.array(imagenet_norm['mean'])
     std = np.array(imagenet_norm['std'])
     img = x.detach().cpu().squeeze().numpy().transpose((1,2,0)) * std + mean
@@ -134,13 +141,15 @@ def visualize(x, results):
     for result in results:
         bbox, confidence, idx = result
         bbox = bbox.detach().cpu().numpy()
+        color = np.random.randn(3) if label else (1, 0, 0)
         plt.gca().add_patch(
             plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
-                          edgeColor=np.random.uniform(size=(3)), fill=False)
+                          edgeColor=color, fill=False)
         )
-        plt.text(bbox[0], bbox[1]+12,
-                 '{}: {:.2f}'.format(voc_names[idx], confidence),
-                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
+        if label:
+            plt.text(bbox[0], bbox[1]+12,
+                     '{}: {:.2f}'.format(voc_names[idx], confidence),
+                     bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
 
 

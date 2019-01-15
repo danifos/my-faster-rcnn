@@ -72,5 +72,11 @@ device = torch.device('cuda')
 
 # %% More configs
 
+# Normalization of the regression output of Fast RCNN
 bbox_normalize_means = Tensor((0.0, 0.0, 0.0, 0.0))
 bbox_normalize_stds = Tensor((0.1, 0.1, 0.2, 0.2))
+
+
+# %% Settings
+
+low_memory = True  # Save GPU memory in a local machine

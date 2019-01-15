@@ -19,7 +19,7 @@ from PIL import Image
 
 from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
-from consts import Tensor, LongTensor, dtype, device
+from consts import Tensor, LongTensor, dtype, device, low_memory
 from consts import bbox_normalize_means, bbox_normalize_stds
 
 import line_profiler
@@ -94,10 +94,6 @@ class XMLHandler(xml.sax.ContentHandler):
 
     def endElement(self, tag):
         self.depth -= 1
-
-        # if tag == 'bndbox' and self.depth == 2:
-        #     self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]-1
-        #     self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]-1
         self.cur = ''
     
     def characters(self, cnt):
@@ -116,7 +112,7 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None, shuffle=False):
+    def __init__(self, root, ann, transform=None, shuffle=True):
         self.root = root
         self.ann = ann
         self.transform = transform
@@ -154,7 +150,7 @@ class VOCDetection(Dataset):
         img, targets = transform_image(img, targets, self.transform)
 
         # Temporarily, ignore images that are too large to avoid OOM
-        if max(img.shape) >= 1000:
+        if low_memory and max(img.shape) >= 1000:
             targets = []
 
         return img, targets
@@ -338,14 +334,14 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     # Get number of proposals by training
     pre_nms_num = 12000 if training else 6000
     post_nms_num = 2000 if training else 300
-    
+
     # 1. Generate proposals from bbox deltas and shifted anchors
     H, W = y_cls.shape[2:]
     
     anchors = create_anchors(img).view(4, -1)
     
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
-    
+
     # ! Note the correspondence of y_reg and anchors
     coords = inv_parameterize(y_reg.squeeze().view(4, -1),
                               anchors)  # corrected coords of anchors, back to input scale

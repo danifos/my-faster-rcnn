@@ -37,9 +37,9 @@ from plot import plot_summary
 
 # changed
 num_epochs = 15
-learning_rate = 3e-3
+learning_rate = 1e-3
 weight_decay = 5e-5
-decay_epochs = []
+decay_epochs = [60]
 
 # Global variables
 logdir = ''
@@ -224,7 +224,7 @@ def train(print_every=1, check_every=10000, save_every=5):
 
             if step % print_every == 0:
                 print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
-                    it=step,loss=loss))
+                    it=step, loss=loss))
 
             if step > 0 and step % check_every == 0:
                 # evaluate the mAP
@@ -248,8 +248,11 @@ def train(print_every=1, check_every=10000, save_every=5):
             print('Next epoch will start {:d}s later'.format(sleep_time))
             sleep(sleep_time)
 
-        if e in decay_epochs:
+        if e+1 in decay_epochs:
+            save_model(e, step)
             epoch = e+1
+            print('Learning rate: {:.1e} -> {:.1e}'.
+                  format(learning_rate, learning_rate/10))
             learning_rate /= 10
             return False
 

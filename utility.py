@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 
-from consts import num_classes, dtype, device, Tensor
+from consts import num_classes, dtype, device, Tensor, low_memory
 
 from time import time
 
@@ -129,7 +129,7 @@ def filter_boxes(lst, min_size, *args):
         yield torch.gather(arg, 1, indices.expand(arg.shape[0], M))
 
 
-def NMS(coords, scores, pre_n, post_n, threshold=0.7):
+def NMS(coords, scores, pre_n, post_n, threshold=0.7, batch_size=512):
     """
     Non-Maximum Supression (vectorized) for proposals.
     Input:
@@ -146,20 +146,43 @@ def NMS(coords, scores, pre_n, post_n, threshold=0.7):
     N = lst.shape[1]
     ret = []
     det = torch.ones(N, dtype=torch.uint8, device=device)
-    # batch_size=512
+    IoUs = None
     
     for i in range(N):
         if len(ret) == post_n:
             break
-        # if i % batch_size == 0:
-        #     IoUs = IoU(lst[:,i:i+batch_size], lst)
+        if i % batch_size == 0:
+            IoUs = IoU(lst[:,i:i+batch_size], lst)
         if det[i]:
             ret.append(lst[:,i])
-            det &= (IoU(lst[:,i:i+1], lst)[0] < threshold)
-            # det &= (IoUs[i % batch_size] < threshold)
+            det &= (IoUs[i % batch_size] < threshold)
 
     ret = torch.stack(ret, dim=1)
     return ret
+
+
+def NMS_lm(coords, scores, pre_n, post_n, threshold=0.7):
+    """Low memory version of NMS()"""
+    _, indices = torch.sort(scores[0,:], descending=True)
+    indices = indices[:pre_n]
+    lst = coords[:, indices]
+    N = lst.shape[1]
+    ret = []
+    det = torch.ones(N, dtype=torch.uint8, device=device)
+
+    for i in range(N):
+        if len(ret) == post_n:
+            break
+        if det[i]:
+            ret.append(lst[:,i])
+            det &= (IoU(lst[:,i:i+1], lst)[0] < threshold)
+
+    ret = torch.stack(ret, dim=1)
+    return ret
+
+
+if low_memory:
+    NMS = NMS_lm
 
 
 def _NMS(lst, threshold=0.7):
