@@ -95,9 +95,9 @@ class XMLHandler(xml.sax.ContentHandler):
     def endElement(self, tag):
         self.depth -= 1
 
-        if tag == 'bndbox' and self.depth == 2:
-            self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]-1
-            self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]-1
+        # if tag == 'bndbox' and self.depth == 2:
+        #     self.targets[-1]['bbox'][2] -= self.targets[-1]['bbox'][0]-1
+        #     self.targets[-1]['bbox'][3] -= self.targets[-1]['bbox'][1]-1
         self.cur = ''
     
     def characters(self, cnt):
@@ -116,7 +116,7 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None):
+    def __init__(self, root, ann, transform=None, shuffle=False):
         self.root = root
         self.ann = ann
         self.transform = transform
@@ -125,7 +125,7 @@ class VOCDetection(Dataset):
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
-        self.order = False  # sample images in order for a sanity check
+        self.order = not shuffle  # sample images in order for a sanity check
         if self.order:
             self.images.sort()
             self.index = 0
@@ -186,7 +186,9 @@ def transform_image(img, targets, transform):
             bbox = target['bbox']
             # Resize bounding-boxes with scale
             for i in range(4):
-                bbox[i] = np.array(bbox[i]*scale[i%2], dtype=np.float32)
+                bbox[i] = np.array((bbox[i]-1)*scale[i%2], dtype=np.float32)
+            bbox[2] -= bbox[0]
+            bbox[3] -= bbox[1]
 
     return img, targets
 
@@ -235,33 +237,37 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
 
     N = anchors.shape[1]
     # Ignore all cross-boundary anchors so they do not contribute to the loss
+    allowed_border = 0.5
     inds_inside = np.where(
-        (anchors[0] >= 0)
-      & (anchors[1] >= 0)
-      & (anchors[0] + anchors[2] < img.shape[3])
-      & (anchors[1] + anchors[3] < img.shape[2])
+        (anchors[0] >= -allowed_border)
+      & (anchors[1] >= -allowed_border)
+      & (anchors[0] + anchors[2] <= img.shape[3]+allowed_border)
+      & (anchors[1] + anchors[3] <= img.shape[2]+allowed_border)
     )[0]
     anchors = anchors[:, inds_inside]
 
     bboxes = Tensor([target['bbox'] for target in targets]).t()
     IoUs = IoU(anchors, bboxes)
-    
+
     labels = -1 * torch.ones(anchors.shape[1], dtype=torch.long, device=device)
-    
+
     # ! New way to sample the other anchors, inspired by rbg's implementation
-    
+
     argmax_IoUs = torch.argmax(IoUs, dim=1)
+    max_IoUs = IoUs[torch.arange(anchors.shape[1]), argmax_IoUs]
 
     # Find negative samples first so that positive ones can clobber them
-    labels[np.where(torch.all(IoUs < 0.3, dim=1))[0]] = 0
-    
+    labels[np.where(max_IoUs < 0.3)[0]] = 0
+
     # Find the anchor as a positive sample with the highest IoU with a gt box
-    max_gts = torch.argmax(IoUs, dim=0)
-    labels[max_gts] = 1
-    
+    argmax_gts = torch.argmax(IoUs, dim=0)
+    max_gts = IoUs[argmax_gts, torch.arange(bboxes.shape[1])]
+    argmax_gts = np.where(IoUs == max_gts)[0]
+    labels[argmax_gts] = 1
+
     # Find other positive samples
-    labels[np.where(torch.any(IoUs >= 0.7, dim=1))[0]] = 1
-    
+    labels[np.where(max_IoUs >= 0.7)[0]] = 1
+
     # Subsample if we have too many
     inds_p = np.where(labels == 1)[0]
     if len(inds_p) > num_p:
@@ -272,9 +278,8 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     if len(inds_n) > num_n:
         labels[inds_n] = -1
         labels[np.random.choice(inds_n, num_n, replace=False)] = 0
-    print('{} positive anchor samples'.format(num_t-num_n))
-    print('{} negative anchor samples'.format(num_n))
-    
+    print('{} / {} anchors samples'.format(num_t-num_n, num_n))
+
     samples = parameterize(bboxes[:, argmax_IoUs], anchors)
 
     # Map up to original set of anchors
@@ -303,9 +308,9 @@ def _unmap(data, N, inds, fill=0):
         ret.fill_(fill)
         ret[inds] = data
     else:
-        ret = torch.empty(data.shape[:-1]+(N,), **feed)
+        ret = torch.empty((data.shape[0], N), **feed)
         ret.fill_(fill)
-        ret[..., inds] = data
+        ret[:, inds] = data
 
     return ret
 
@@ -416,8 +421,8 @@ def sample_proposals(proposals, targets, num_samples=128):
     gt_coords = gt_coords.t()
     gt_coords = (gt_coords - bbox_normalize_means.view(1,4)) \
                            / bbox_normalize_stds.view(1,4)
-    
-    print('{} positive roi samples'.format(min(len(inds_fg), num_fg_total)))
-    print('{} negative roi samples'.format(min(len(inds_bg), num_bg_total)))
+
+    print('{} / {} proposal samples'.
+          format(min(len(inds_fg), num_fg_total), min(len(inds_bg), num_bg_total)))
     
     return samples, gt_coords, gt_labels, num_fg_total

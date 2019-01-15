@@ -290,7 +290,7 @@ def RPN_loss(p, p_s, t, t_s, sigma=3):
 
     _cls_loss = cls_loss.detach().cpu().numpy()
     _reg_loss = reg_loss.detach().cpu().numpy()
-    print('RPN cls loss: {:.2f}\nRPN reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
+    print('RPN cls loss: {:.2f}, RPN reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
     
     return loss, (_cls_loss, _reg_loss)
 
@@ -321,7 +321,7 @@ def RoI_loss(p, u, t, v, sigma=1):
 
     _cls_loss = cls_loss.detach().cpu().numpy()
     _reg_loss = reg_loss.detach().cpu().numpy()
-    print('RoI cls loss: {:.2f}\nRoI reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
+    print('RoI cls loss: {:.2f}, RoI reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
     
     return loss, (_cls_loss, _reg_loss)
 
