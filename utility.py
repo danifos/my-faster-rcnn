@@ -185,7 +185,7 @@ if low_memory:
     NMS = NMS_lm
 
 
-def _NMS(lst, threshold=0.7):
+def _NMS(lst, threshold=0.3):
     """
     Naive version of NMS() (and specially for final prediction).
     Inputs:
