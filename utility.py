@@ -189,20 +189,22 @@ def _NMS(lst, threshold=0.3):
     """
     Naive version of NMS() (and specially for final prediction).
     Inputs:
-        - lst: List of tuples of (bbox, confidence, class_idx)
+        - lst: List of dicts of {bbox, confidence, class_idx}
     Returns:
         - ret: List of the same format, but suppressed.
     """
-    lst.sort(key=lambda x:x[1])
+    lst.sort(key=lambda x:x['confidence'])
     ret = []
     while lst:
-        tp1 = lst.pop()
-        bb1, _, idx1 = tp1
-        ret.append(tp1)
+        dic1 = lst.pop()
+        bb1 = dic1['bbox']
+        idx1 = dic1['class_idx']
+        ret.append(dic1)
         i = 0
         while i < len(lst):
-            tp2 = lst[i]
-            bb2, _, idx2 = tp2
+            dic2 = lst[i]
+            bb2 = dic2['bbox']
+            idx2 = dic2['class_idx']
             if idx1 == idx2 and _IoU(bb1, bb2) > threshold:
                 lst.pop(i)
             else:
@@ -211,42 +213,34 @@ def _NMS(lst, threshold=0.3):
     return ret
 
 
-def average_precision(lst, targets, threshold=0.5):
+def results_to_raw(results, scale):
     """
-    Compute the TP and TP+FP for an image and every object class
-    
+    Convert results of _NMS() to raw version
+
     Inputs:
-        - lst: List of predicted (bounding box, confidence, class index)
-          (already sorted because NMS is done before)
-        - targets: Ground-truth of the image
-        - threhold: IoU over which can be considered as a TP
+        - results: Output of _NMS()
+        - scale: (xscale, yscale) when sampling
     Returns:
-        - ToTF: An ndarray of size Cx2, 2 for (TP, TP+FP)
+        - Nothing. This is an in-place method.
     """
-    ToTF = np.zeros((num_classes, 2), dtype=np.int32)
-    N = len(targets)
-    det = [1]*N  # denoting whether a ground-truth is *unmatched*
-    for bbox, _, idx in lst:
-        #print(idx, bbox)
-        if idx == 0:  # ignore the background class
-            continue
-        t = 0
-        flag = False
-        for i, target in enumerate(targets):  # search through the gt
-            if idx != target['class_idx']:
-                continue
-            iou = _IoU(bbox, target['bbox'])
-            if iou >= threshold and iou > t:
-                if det[i] == 1:
-                    det[i] = 0  # match the ground-truth
-                    t = iou
-                    flag = True  # found a TP!
-        if flag:
-            ToTF[idx-1] += 1
-        else:
-            ToTF[idx-1,1] += 1
-    
-    return ToTF
+    xscale, yscale = (s[0].item() for s in scale)
+    for result in results:
+        # Convert Tensors to floats
+        old_bbox = result['bbox']
+        result['bbox'] = bbox = [0]*4
+        for i in range(4):
+            bbox[i] = old_bbox[i].item()
+        # Convert w and h to right and bottom
+        bbox[2] += bbox[0]
+        bbox[3] += bbox[1]
+        # Convert back to origin scale
+        bbox[0] /= xscale
+        bbox[1] /= yscale
+        bbox[2] /= xscale
+        bbox[3] /= yscale
+        # Convert float to int
+        for i in range(4):
+            bbox[i] = int(bbox[i]+0.5)
 
 
 # %% Utils for loss

@@ -80,3 +80,4 @@ bbox_normalize_stds = Tensor((0.1, 0.1, 0.2, 0.2))
 # %% Settings
 
 low_memory = True  # Save GPU memory in a local machine
+evaluating = False  # when True, sample all images regardless of low_memory

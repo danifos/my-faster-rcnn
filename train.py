@@ -27,7 +27,7 @@ from faster_r_cnn import FasterRCNN
 from utility import RPN_loss, RoI_loss
 from consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
-from consts import voc_train_data_dir, voc_train_ann_dir
+from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir
 from consts import imagenet_norm
 from test import evaluate
 from plot import plot_summary
@@ -58,7 +58,7 @@ transform = T.Compose([
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
 #coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
 voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform=transform)
-voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform=transform)
+voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir, transform=transform)
 
 
 # %% Data loders
@@ -68,17 +68,11 @@ voc_val = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir, transform
 #loader_val = DataLoader(coco_val, batch_size=1,
 #                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
 
-# num_val = 500
-# loader_train = DataLoader(voc_train, batch_size=1,
-#                            sampler=sampler.SubsetRandomSampler(range(num_val, len(voc_train))))
-# loader_val = DataLoader(voc_val, batch_size=1,
-#                         sampler=sampler.SubsetRandomSampler(range(num_val)))
-
-num_train = 5#len(voc_train)
+num_train = len(voc_train)
 loader_train = DataLoader(voc_train, batch_size=1,
                           sampler=sampler.SubsetRandomSampler(range(num_train)))
-loader_val = DataLoader(voc_val, batch_size=1,
-                        sampler=sampler.SubsetRandomSampler(range(num_train)))
+loader_test = DataLoader(voc_test, batch_size=1,
+                         sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
 
 
 # %% Initialization
@@ -150,7 +144,7 @@ def stage_init(summary_dic, files_dic):
     else:
         summary = {'samples':{'rpn':[], 'roi':[]},
                    'loss':{'single':[], 'total':[]},
-                   'map':{'train':[], 'val':[]}}
+                   'map':{'train':[], 'test':[]}}
 
     # Load model
     model = None
@@ -220,7 +214,7 @@ def train(print_every=1, check_every=10000, save_every=5):
     for e in range(epoch, num_epochs):
         print('- Epoch {}'.format(e))
 
-        for x, y in loader_train:  # an image and its targets
+        for x, y, a in loader_train:  # an image and its targets
             if len(y) == 0: continue  # no target in this image
             model.train()  # put model to train mode
 
@@ -230,7 +224,7 @@ def train(print_every=1, check_every=10000, save_every=5):
             tic = toc
             # =================================================================
 
-            loss = train_step(x, y, optimizer)
+            loss = train_step(x, y, a, optimizer)
 
             summary['loss']['total'].append(loss)
 
@@ -244,9 +238,9 @@ def train(print_every=1, check_every=10000, save_every=5):
                 summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
 
-                val_mAP, _ = evaluate(model, loader_val, 100)
-                summary['map']['val'].append((step, val_mAP))
-                print('val mAP = {:.1f}'.format(100 * val_mAP))
+                test_mAP, _ = evaluate(model, loader_test, 100)
+                summary['map']['test'].append((step, test_mAP))
+                print('test mAP = {:.1f}'.format(100 * test_mAP))
 
                 save_summary()
 
@@ -270,7 +264,7 @@ def train(print_every=1, check_every=10000, save_every=5):
     return True
 
 
-def train_step(x, y, optimizer):
+def train_step(x, y, a, optimizer):
     x = x.to(device=device, dtype=dtype)
 
     loss = None
@@ -286,7 +280,7 @@ def train_step(x, y, optimizer):
     rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
 
     # Create about 2000 region proposals
-    proposals = create_proposals(RPN_cls, RPN_reg, x, y[0]['scale'][0], training=True)
+    proposals = create_proposals(RPN_cls, RPN_reg, x, a['scale'][0], training=True)
     # Sample 128 proposals
     proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
     # Get Nx81 classification scores

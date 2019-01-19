@@ -19,7 +19,8 @@ from PIL import Image
 
 from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
-from consts import Tensor, LongTensor, dtype, device, low_memory
+from consts import Tensor, LongTensor, dtype, device
+from consts import evaluating, low_memory
 from consts import bbox_normalize_means, bbox_normalize_stds
 
 import line_profiler
@@ -131,7 +132,10 @@ class VOCDetection(Dataset):
         Inputs:
             - index (int): Index
         Returns:
-            - tuple: Tuple (image, targets).
+            - tuple: Tuple (image, targets, info).
+              - image: Tensor after resizing
+              - targets: Groung-truth bboxes after resizing
+              - info: Dict, assist info that has nothing to do with gt
         """
         if self.order:
             path = self.images[self.index]
@@ -148,12 +152,13 @@ class VOCDetection(Dataset):
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         img, targets = transform_image(img, targets, self.transform)
+        info = {'scale': targets[0]['scale'], 'image_id': pre}
 
         # Temporarily, ignore images that are too large to avoid OOM
-        if low_memory and max(img.shape) >= 1000:
+        if low_memory and not evaluating and max(img.shape) >= 1000:
             targets = []
 
-        return img, targets
+        return img, targets, info
 
     def __len__(self):
         return len(self.images)
@@ -377,7 +382,7 @@ def sample_proposals(proposals, targets, num_samples=128):
     
     Inputs:
         - proposals: List of proposals made by `create_proposals`
-          sacle as the input
+          scale as the input
         - targets: Ground-truth of the image
     Returns:
         - samples: Tensor of sampled proposals of size Nx4

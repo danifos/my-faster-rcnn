@@ -13,15 +13,74 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from sampler import create_proposals
-from utility import _NMS, inv_parameterize, average_precision
+from utility import _NMS, _IoU, inv_parameterize
 from consts import num_classes
 from consts import dtype, device, voc_names
 from consts import imagenet_norm
 from consts import bbox_normalize_means, bbox_normalize_stds
 
-def predict(model, img):
-    """Predict the bounding boxes in an image"""
+
+def predict_raw(model, image):
+    """
+    Predict the object in a raw image.
+
+    Inputs:
+        - model: Faster R-CNN model
+        - image: Un-processed Image
+    Returns:
+        - results: Dict of
+            - bbox: (x(left), y(top), x(right), y(bottom))
+            - confidence
+            - class_idx
+    """
+    # TODO: Implement predict_raw()
     pass
+
+
+def predict(model, img, info):
+    """
+    Predict the bounding boxes in an image.
+
+    Inputs:
+        - model: Faster R-CNN model
+        - img: Input img sampled by sampler
+        - info: Assist info output by sampler
+    Returns:
+        - results: Dict of
+            - bbox: (x(left), y(top), w, h) after resizing
+            - confidence
+            - class_idx
+    """
+    x = img.to(device=device, dtype=dtype)
+    features = model.CNN(x)
+    RPN_cls, RPN_reg = model.RPN(features)
+    # 300 top-ranked proposals at test time
+    proposals = create_proposals(RPN_cls, RPN_reg,
+                                 x, info['scale'][0], training=False)
+
+    RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
+    N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
+    roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
+    roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
+    roi_coords = roi_coords * bbox_normalize_stds.view(4,1,1) \
+                            + bbox_normalize_means.view(4,1,1)
+    proposals = proposals.unsqueeze(2).expand_as(roi_coords)
+    roi_coords = inv_parameterize(roi_coords, proposals)
+
+    roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
+    lst = []  # list of predicted dict {bbox, confidence, class_idx}
+    for i in range(N):
+        confidence = torch.max(roi_scores[i])
+        idx = np.where(roi_scores[i] == confidence)[0][0]
+        if idx != 0:  # ignore background class
+            bbox = roi_coords[:,i,idx]
+            lst.append({'bbox': bbox,
+                        'confidence': confidence,
+                        'class_idx': idx})
+
+    results = _NMS(lst)
+
+    return results
 
 
 def evaluate(model, loader, total_batches=0, verbose=False):
@@ -41,10 +100,10 @@ def evaluate(model, loader, total_batches=0, verbose=False):
     num_batches = 0
     
     model.eval()
-    for x, y in loader:
+    for x, y, a in loader:
         if len(y) == 0:
             continue
-        AP += check_AP(x, y, model, verbose)
+        AP += compute_AP(x, y, a, model, verbose)
         num_targets += len(y)
         print('AP:', np.sum(AP[:,0]), '/', np.sum(AP[:,1]))
 
@@ -59,78 +118,59 @@ def evaluate(model, loader, total_batches=0, verbose=False):
     return mAP, recall
 
 
-def check_AP(x, y, model, verbose):
+def compute_AP(x, y, a, model, verbose):
     """
     Check AP and recall of an image (avoiding memory leak).
     """
-    DEBUG1 = False
-    DEBUG2 = False
-    DEBUG3 = False
-    DEBUG4 = False
-
-    x = x.to(device=device, dtype=dtype)
-    features = model.CNN(x)
-    RPN_cls, RPN_reg = model.RPN(features)
-    if DEBUG1:
-        # Test targets of sample_anchors
-        from sampler import create_anchors, sample_anchors
-        anchor_samples, labels, _ = sample_anchors(x, y)
-        if False and DEBUG3:
-            # Visualize sampled anchors
-            anchors = create_anchors(x).view(4, -1)
-            anchors = inv_parameterize(anchor_samples, anchors)
-            lst = []
-            for i in range(labels.shape[0]):
-                if labels[i] == 1:
-                    lst.append((anchors[:, i], 1, 0))
-            visualize(x, lst, label=False)
-            return np.zeros((num_classes, 2), dtype=np.int64)
-        RPN_reg = anchor_samples.view_as(RPN_reg)  # Replace RPN_reg with gt
-        zeros = torch.zeros_like(RPN_cls).squeeze().view(2, -1)
-        zeros[0, np.where(labels == 1)[0]] = 1
-        zeros[1, np.where(labels == -1)[0]] = 1
-        RPN_cls = zeros.view_as(RPN_cls)  # Replace RPN_cls with gt
-    # 300 top-ranked proposals at test time
-    proposals = create_proposals(RPN_cls, RPN_reg,
-                                 x, y[0]['scale'][0], training=False)
-    if DEBUG3:
-        # Visualize all proposals
-        lst = []
-        for i in range(proposals.shape[1]):
-            lst.append((proposals[:, i], 1, 0))
-        visualize(x, lst, label=False)
-        return np.zeros((num_classes, 2), dtype=np.int64)
-    if DEBUG2:
-        # give the true bounding box directly
-        proposals = torch.cuda.FloatTensor([t['bbox'] for t in y]).t()
-
-    RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
-    N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
-    roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
-    roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
-    roi_coords = roi_coords * bbox_normalize_stds.view(4,1,1) \
-                            + bbox_normalize_means.view(4,1,1)
-    proposals = proposals.unsqueeze(2).expand_as(roi_coords)
-    roi_coords = inv_parameterize(roi_coords, proposals)
-    if DEBUG4:
-        # Regardless of regression of Fast R-CNN
-        roi_coords = proposals
-    
-    roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
-    lst = []  # list of predicted tuple (bbox, confidence, class idx)
-    for i in range(N):
-        confidence = torch.max(roi_scores[i])
-        idx = np.where(roi_scores[i] == confidence)[0][0]
-        if idx != 0:  # ignore background class
-            bbox = roi_coords[:,i,idx]
-            lst.append((bbox, confidence, idx))
-        
-    results = _NMS(lst)
+    results = predict(model, x, a)
 
     if verbose:
         visualize(x, results)
     
-    return average_precision(results, y)
+    return compute_precision(results, y)
+
+
+def compute_precision(lst, targets, threshold=0.5):
+    """
+    Compute the TP and TP+FP for an image and every object class
+
+    Inputs:
+        - lst: List of predicted (bounding box, confidence, class index)
+          (already sorted because NMS is done before)
+        - targets: Ground-truth of the image
+        - threhold: IoU over which can be considered as a TP
+    Returns:
+        - ToTF: An ndarray of size Cx2, 2 for (TP, TP+FP)
+    """
+    ToTF = np.zeros((num_classes, 2), dtype=np.int32)
+    N = len(targets)
+    det = [1]*N  # denoting whether a ground-truth is *unmatched*
+    for dic in lst:
+        idx = dic['class_idx']
+        if idx == 0:  # ignore the background class
+            continue
+        t = 0
+        flag = False
+        for i, target in enumerate(targets):  # search through the gt
+            if idx != target['class_idx']:
+                continue
+            iou = _IoU(dic['bbox'], target['bbox'])
+            if iou >= threshold and iou > t:
+                if det[i] == 1:
+                    det[i] = 0  # match the ground-truth
+                    t = iou
+                    flag = True  # found a TP!
+        if flag:
+            ToTF[idx-1] += 1
+        else:
+            ToTF[idx-1,1] += 1
+
+    return ToTF
+
+
+def visualize_raw(image, results):
+    # TODO: implement visualize_raw()
+    pass
 
 
 def visualize(x, results, label=True):
@@ -139,7 +179,9 @@ def visualize(x, results, label=True):
     img = x.detach().cpu().squeeze().numpy().transpose((1,2,0)) * std + mean
     plt.imshow(img)
     for result in results:
-        bbox, confidence, idx = result
+        bbox = result['bbox']
+        confidence = result['confidence']
+        idx = result['class_idx']
         bbox = bbox.detach().cpu().numpy()
         color = np.random.uniform(size=3)  # if label else (1, 0, 0)
         plt.gca().add_patch(
