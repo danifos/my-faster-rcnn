@@ -115,6 +115,8 @@ def evaluate(model, loader, total_batches=0, verbose=False):
     mAP = np.mean(AP[inds,0] / AP[inds,1])
     recall = np.sum(AP[:,0]) / num_targets
 
+    model.train()
+
     return mAP, recall
 
 

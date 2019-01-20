@@ -16,12 +16,9 @@ import os
 
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torch.utils.data import sampler
-
 import torchvision.transforms as T
 
-from sampler import CocoDetection, VOCDetection
+from sampler import CocoDetection, VOCDetection, data_loader
 from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
 from utility import RPN_loss, RoI_loss
@@ -63,16 +60,8 @@ voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir, transform=
 
 # %% Data loders
 
-#loader_train = DataLoader(coco_train, batch_size=1,
-#                           sampler=sampler.SubsetRandomSampler(range(len(coco_train))))
-#loader_val = DataLoader(coco_val, batch_size=1,
-#                        sampler=sampler.SubsetRandomSampler(range(len(coco_val))))
-
-num_train = len(voc_train)
-loader_train = DataLoader(voc_train, batch_size=1,
-                          sampler=sampler.SubsetRandomSampler(range(num_train)))
-loader_test = DataLoader(voc_test, batch_size=1,
-                         sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
+loader_train = data_loader(voc_train)
+loader_test = data_loader(voc_test)
 
 
 # %% Initialization
@@ -210,13 +199,13 @@ def train(print_every=1, check_every=10000, save_every=5):
     global model, epoch, step
 
     optimizer = get_optimizer()
+    model.train()
 
     for e in range(epoch, num_epochs):
         print('- Epoch {}'.format(e))
 
         for x, y, a in loader_train:  # an image and its targets
             if len(y) == 0: continue  # no target in this image
-            model.train()  # put model to train mode
 
             # ==========================  Debug  ==============================
             toc = time()

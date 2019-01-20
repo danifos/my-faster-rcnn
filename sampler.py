@@ -13,7 +13,7 @@ from time import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, sampler
 import torchvision.transforms as T
 from PIL import Image
 
@@ -113,7 +113,7 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None, shuffle=True):
+    def __init__(self, root, ann, transform=None):
         self.root = root
         self.ann = ann
         self.transform = transform
@@ -122,10 +122,8 @@ class VOCDetection(Dataset):
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
-        self.order = not shuffle  # sample images in order for a sanity check
-        if self.order:
-            self.images.sort()
-            self.index = 0
+        # Optional: Sort the images by their names
+        # self.images.sort()
 
     def __getitem__(self, index):
         """
@@ -137,12 +135,7 @@ class VOCDetection(Dataset):
               - targets: Groung-truth bboxes after resizing
               - info: Dict, assist info that has nothing to do with gt
         """
-        if self.order:
-            path = self.images[self.index]
-            self.index += 1
-            self.index %= len(self)
-        else:
-            path = self.images[index]
+        path = self.images[index]
         pre, _ = os.path.splitext(path)
 
         targets = []
@@ -163,6 +156,18 @@ class VOCDetection(Dataset):
 
     def __len__(self):
         return len(self.images)
+
+
+# %% My DataLoader
+
+def collate(batch):
+    x, y, a = batch[0]
+    x = x.unsqueeze(0)
+    return x, y, a
+
+def data_loader(dataset):
+    return DataLoader(dataset, batch_size=1, shuffle=True,
+                      collate_fn=collate, num_workers=8)
 
 
 # %% Transformation of images and targets for both dataset
@@ -188,7 +193,7 @@ def transform_image(img, targets, transform):
             bbox = target['bbox']
             # Resize bounding-boxes with scale
             for i in range(4):
-                bbox[i] = np.array((bbox[i]-1)*scale[i%2], dtype=np.float32)
+                bbox[i] = (bbox[i]-1)*scale[i%2]
             bbox[2] -= bbox[0]
             bbox[3] -= bbox[1]
 
