@@ -366,7 +366,7 @@ def parameterize(bbox, anchor, dtype=None):
         t = dtype(bbox.shape)
     else:  # torch.cuda.FloatTensor by default
         t = Tensor(bbox.shape)
-    
+
     bbox_x = bbox[0] + bbox[2]/2
     bbox_y = bbox[1] + bbox[3]/2
     anchor_x = anchor[0] + anchor[2]/2

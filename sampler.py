@@ -9,6 +9,7 @@ Created on Mon Nov  5 18:56:31 2018
 import numpy as np
 import os
 import xml.sax
+from random import randrange
 from time import time
 
 import torch
@@ -113,7 +114,7 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None):
+    def __init__(self, root, ann, transform=None, subset=0):
         self.root = root
         self.ann = ann
         self.transform = transform
@@ -124,6 +125,8 @@ class VOCDetection(Dataset):
 
         # Optional: Sort the images by their names
         # self.images.sort()
+
+        self.images = self.images[:subset]
 
     def __getitem__(self, index):
         """
@@ -148,10 +151,6 @@ class VOCDetection(Dataset):
         img, targets = transform_image(img, targets, self.transform)
         info = {'shape': shape, 'scale': targets[0]['scale'], 'image_id': pre}
 
-        # Temporarily, ignore images that are too large to avoid OOM
-        if low_memory and not evaluating and max(img.shape) >= 1000:
-            targets = []
-
         return img, targets, info
 
     def __len__(self):
@@ -172,12 +171,30 @@ def data_loader(dataset):
 
 # %% Transformation of images and targets for both dataset
 
-def transform_image(img, targets, transform):
+def transform_image(img, targets, transform, random_flip=True,
+                    min_size=600, max_size=1000):
+
+    flip = randrange(2) if random_flip else 0
+
     # "Rescale the image such that the short side is s=600 pixels"
+    # And limit the longer side in max_size
     width, height = img.width, img.height
-    img = T.Resize(600)(img)
-    w, h = img.width, img.height
-    
+    if height < width:
+        h = min_size
+        w = int(h/height*width+0.5)
+        if w > max_size:
+            w = max_size
+            h = int(w/width*height+0.5)
+    else:
+        w = min_size
+        h = int(w/width*height+0.5)
+        if h > max_size:
+            h = max_size
+            w = int(h/height*width+0.5)
+
+    img = T.Resize((h, w))(img)
+    img = T.RandomHorizontalFlip(flip)(img)
+
     if transform is not None:
         img = transform(img)
 
@@ -185,17 +202,20 @@ def transform_image(img, targets, transform):
         return img, targets  # and for convenient, I just skip it.
     
     # Rescale the bounding box together
-    if 'scale' not in targets[0]:  # if is not processed
-        scale = w/width, h/height
-        # The first target store the scale information
-        targets[0]['scale'] = scale
-        for target in targets:
-            bbox = target['bbox']
-            # Resize bounding-boxes with scale
-            for i in range(4):
-                bbox[i] = (bbox[i]-1)*scale[i%2]
-            bbox[2] -= bbox[0]
-            bbox[3] -= bbox[1]
+    assert ('scale' not in targets[0]), "Processed twice"
+
+    scale = w/width, h/height
+    # The first target store the scale information
+    targets[0]['scale'] = scale
+    for target in targets:
+        bbox = target['bbox']
+        # Resize bounding-boxes with scale
+        if flip:
+            bbox[0], bbox[2] = width-bbox[2]+1, width-bbox[0]+1
+        for i in range(4):
+            bbox[i] = (bbox[i]-1)*scale[i%2]
+        bbox[2] -= bbox[0]
+        bbox[3] -= bbox[1]
 
     return img, targets
 
