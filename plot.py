@@ -11,6 +11,7 @@ Created on Fri Jan 11 14:50:47 2019
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import visdom
 
 
 # %% Utils for plotting results
@@ -53,7 +54,7 @@ def plot_curves(x, Y, tau, filename, legend=None):
     xlim = plt.xlim()
     ylim = plt.ylim()
     plt.plot([-10000, 100000], [0, 0], linewidth=2, color='grey')
-    plt.plot([0, 0], [-1, 1000], linewidth=2, color='grey')
+    plt.plot([0, 0], [-100, 1000], linewidth=2, color='grey')
     plt.xlim(xlim)
     plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))])
     plt.grid()
@@ -88,6 +89,30 @@ def weighted_linear_regression(summary, tau):
             smooth[i].append(float(theta[0] + x[i] * theta[1]))
 
     return smooth
+
+
+# %% Wrapper of visdom
+
+class Visualizer:
+    def __init__(self):
+        self.vis = visdom.Visdom(env='default', use_incoming_socket=False)
+
+    def plot(self, summary):
+        """Plot samples, total loss and the other 4 losses."""
+        feed = {'win': 'samples', 'update': 'append'}
+        names = ('rpn', 'roi')
+        for name in names:
+            self.vis.line(summary['samples'][name], **feed, name=name)
+        feed['win'] = 'total_loss'
+        self.vis.line(summary['loss']['total'], **feed)
+        feed['win'] = 'cls_loss'
+        for name in names:
+            self.vis.line(summary, **feed, name=name)
+        feed['win'] = 'reg_loss'
+        for name in names:
+            self.vis.line(summary, **feed, name=name)
+    # TODO: Add visualization of prediction
+
 
 # %% Main
 

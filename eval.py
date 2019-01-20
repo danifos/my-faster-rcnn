@@ -28,8 +28,10 @@ from utility import results_to_raw
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, default='result')
-parser.add_argument('--savedir', type=str,
-                    default='/home/user/workspace/VOCdevkit/results/VOC2007')
+parser.add_argument(
+    '--savedir', type=str,
+    default='/home/user/workspace/VOCdevkit/VOCcode/results/VOC2007/Main'
+)
 args = parser.parse_args()
 savedir = args.savedir
 
@@ -45,8 +47,8 @@ def open_files():
 
 
 def close_files():
-    for file in files:
-        file.close()
+    for key in files:
+        files[key].close()
 
 
 def append_result(image_id, class_idx, bbox, confidence):
@@ -87,7 +89,7 @@ def main():
 
     for x, _, a in loader_test:
         results = predict(model, x, a)
-        results_to_raw(results, a['scale'])
+        results_to_raw(results, a['scale'], *a['shape'])
         for result in results:
             append_result(a['image_id'][0], result['class_idx'],
                           result['bbox'], result['confidence'])

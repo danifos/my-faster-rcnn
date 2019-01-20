@@ -151,8 +151,9 @@ class VOCDetection(Dataset):
         print(pre, targets)
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
+        shape = (img.width, img.height)
         img, targets = transform_image(img, targets, self.transform)
-        info = {'scale': targets[0]['scale'], 'image_id': pre}
+        info = {'shape': shape, 'scale': targets[0]['scale'], 'image_id': pre}
 
         # Temporarily, ignore images that are too large to avoid OOM
         if low_memory and not evaluating and max(img.shape) >= 1000:

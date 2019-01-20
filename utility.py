@@ -213,7 +213,7 @@ def _NMS(lst, threshold=0.3):
     return ret
 
 
-def results_to_raw(results, scale):
+def results_to_raw(results, scale, w, h):
     """
     Convert results of _NMS() to raw version
 
@@ -240,7 +240,12 @@ def results_to_raw(results, scale):
         bbox[3] /= yscale
         # Convert float to int
         for i in range(4):
-            bbox[i] = int(bbox[i]+0.5)
+            bbox[i] = int(bbox[i]+0.5)+1
+        # Clip bbox in (1, 1, w, h)
+        bbox[0] = max(1, bbox[0])
+        bbox[1] = max(1, bbox[1])
+        bbox[2] = min(w[0], bbox[2])
+        bbox[3] = min(h[0], bbox[3])
 
 
 # %% Utils for loss
