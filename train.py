@@ -169,9 +169,7 @@ def stage_init(summary_dic, files_dic, load_model):
 
 def save_model(epoch, step):
     filename = os.path.join(logdir, 'param-{}-{}.pth'.format(epoch, step))
-    torch.save(model.state_dict(), filename)
-
-    print('Saved model successfully')
+    model.save(filename)
 
 
 def save_summary():
@@ -329,6 +327,7 @@ def main():
                     save_every=args.save_every)
         if ret:
             break
+    save_summary()
     save_model(epoch, step)
 
 

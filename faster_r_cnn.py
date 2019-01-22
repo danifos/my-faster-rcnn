@@ -142,22 +142,21 @@ class FasterRCNN(nn.Module):
         self.RCNN = FastRCNN(
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
 
+        self.load_optimizer = False
         self.optimizer = None
         if params:
             # Load parameters
-            print('Loaded pre-trained model')
-            self.load_state_dict(torch.load(params))
+            state_dict = torch.load(params)
+            self.load_state_dict(state_dict['model'])
+            self.load_optimizer = state_dict['optimizer']
+            print('Loaded pre-trained model and optimizer')
         else:
             # And randomize the parameters otherwise
-            print('Initialized model randomly')
             for child in (self.RPN, self.RCNN):
                 child.weight_init()
+            print('Initialized model randomly')
 
     def get_optimizer(self, learning_rate, weight_decay):
-        if self.optimizer:
-            optimizer = self.optimizer
-            self.optimizer = None
-            return optimizer
         params = []
         for name, param in dict(self.named_parameters()).items():
             if param.requires_grad:
@@ -169,9 +168,20 @@ class FasterRCNN(nn.Module):
                     params.append({'params': [param],
                                    'lr': learning_rate,
                                    'weight_decay': weight_decay})
-        return optim.SGD(params, momentum=0.9)
+        self.optimizer = optim.SGD(params, momentum=0.9)
+        if self.load_optimizer:
+            self.optimizer.load_state_dict(self.load_optimizer)
+            self.load_optimizer = None
+        return self.optimizer
 
     def lr_decay(self, decay=10):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] /= decay
         return self.optimizer
+
+    def save(self, filename):
+        state_dict = {'model': self.state_dict(),
+                      'optimizer': self.optimizer.state_dict()}
+        torch.save(state_dict, filename)
+
+        print('Saved model successfully')
