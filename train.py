@@ -57,7 +57,7 @@ transform = T.Compose([
 voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir,
                          transform=transform)
 voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                        transform=transform)
+                        transform=transform, flip=False)
 
 
 # %% Data loders
@@ -72,21 +72,24 @@ def init():
     """
     Initialize the model, epoch and step, loss and mAP summary, hyper-parameters.
     """
-    files = None
     summary_dic = None
+    files_dic = {}
 
     for cur, _, files in os.walk('.'):  # check if we have the logdir already
         if cur == os.path.join('.', logdir).rstrip('/'):  # we've found it
             # open the summary file
-            with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
-                summary_dic = pickle.load(fo, encoding='bytes')
-
+            try:
+                with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
+                    summary_dic = pickle.load(fo, encoding='bytes')
+            except:
+                print('summary.pkl not found in existing logdir')
+            files_dic = search_files(files)
+                
             break
-
+            
     else:  # there's not, make one
         os.mkdir(logdir)
 
-    files_dic = search_files(files)
     stage_init(summary_dic, files_dic)
 
 
@@ -194,7 +197,7 @@ def lr_decay(decay=10):
     learning_rate /= decay
 
 
-def train(print_every=1, check_every=10000, save_every=5):
+def train(print_every=1, check_every=1000, save_every=5):
     # ===================  Preparations for debugging  ========================
     tic = time()
     # =========================================================================

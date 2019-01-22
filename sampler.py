@@ -64,7 +64,7 @@ class CocoDetection(Dataset):
         for target in targets:
             target['class_idx'] = id2idx[target['category_id']]
         
-        img, targets = transform_image(img, targets, self.transform)
+        img, targets = transform_image(img, targets, self.transform, self.flip)
 
         return img, targets
 
@@ -114,19 +114,21 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None, subset=0):
+    def __init__(self, root, ann, transform=None, flip=True, subset=0):
         self.root = root
         self.ann = ann
         self.transform = transform
+        self.flip = flip
         
         self.images = os.listdir(root)
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
         # Optional: Sort the images by their names
-        # self.images.sort()
+        self.images.sort()
 
-        self.images = self.images[:subset]
+        if subset:
+            self.images = self.images[:subset]
 
     def __getitem__(self, index):
         """
@@ -164,9 +166,10 @@ def collate(batch):
     x = x.unsqueeze(0)
     return x, y, a
 
-def data_loader(dataset):
-    return DataLoader(dataset, batch_size=1, shuffle=True,
-                      collate_fn=collate, num_workers=8)
+def data_loader(dataset, shuffle=True):
+    num_workers = 8
+    return DataLoader(dataset, batch_size=1, shuffle=shuffle,
+                      collate_fn=collate, num_workers=num_workers)
 
 
 # %% Transformation of images and targets for both dataset

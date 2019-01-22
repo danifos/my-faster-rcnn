@@ -205,13 +205,11 @@ def init(logdir, test_set):
     train.init()
     loader = None
     if test_set:
-        from torch.utils.data import DataLoader, sampler
-        from sampler import VOCDetection
+        from sampler import VOCDetection, data_loader
         from consts import voc_test_data_dir, voc_test_ann_dir
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                                 transform=train.transform)
-        loader = DataLoader(voc_test, batch_size=1,
-                          sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
+        loader = data_loader(voc_test, shuffle=True)
     else:
         loader = train.loader_train
     return train.model, loader

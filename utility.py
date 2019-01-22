@@ -223,7 +223,7 @@ def results_to_raw(results, scale, w, h):
     Returns:
         - Nothing. This is an in-place method.
     """
-    xscale, yscale = (s[0].item() for s in scale)
+    xscale, yscale = scale
     for result in results:
         # Convert Tensors to floats
         old_bbox = result['bbox']
@@ -244,8 +244,8 @@ def results_to_raw(results, scale, w, h):
         # Clip bbox in (1, 1, w, h)
         bbox[0] = max(1, bbox[0])
         bbox[1] = max(1, bbox[1])
-        bbox[2] = min(w[0], bbox[2])
-        bbox[3] = min(h[0], bbox[3])
+        bbox[2] = min(w, bbox[2])
+        bbox[3] = min(h, bbox[3])
 
 
 # %% Utils for loss

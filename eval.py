@@ -12,13 +12,11 @@ import os
 import argparse
 from time import time
 
-from torch.utils.data import DataLoader
-from torch.utils.data import sampler
 import torchvision.transforms as T
 
 import consts
 consts.evaluating = True
-from sampler import VOCDetection
+from sampler import VOCDetection, data_loader
 from consts import voc_test_data_dir, voc_test_ann_dir
 from consts import imagenet_norm, voc_names
 import train
@@ -67,19 +65,19 @@ def main():
         T.ToTensor(),
         T.Normalize(**imagenet_norm)
     ])
-    voc_test = VOCDetection(voc_test_data_dir, voc_test_ann_dir,
-                            transform=transform, shuffle=False)
-    loader_test = DataLoader(voc_test, batch_size=1,
-                             sampler=sampler.SubsetRandomSampler(range(len(voc_test))))
+    voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
+                            transform=transform)
+    loader_test = data_loader(voc_test, shuffle=False)
 
     train.logdir = args.logdir
     train.init()
     model = train.model
 
     try:
-        os.chdir(savedir)
-    except:
         os.mkdir(savedir)
+        print('Create new dir')
+    except:
+        print('Rewrite existing dir')
 
     open_files()
     
@@ -91,7 +89,7 @@ def main():
         results = predict(model, x, a)
         results_to_raw(results, a['scale'], *a['shape'])
         for result in results:
-            append_result(a['image_id'][0], result['class_idx'],
+            append_result(a['image_id'], result['class_idx'],
                           result['bbox'], result['confidence'])
     
     toc = time()
