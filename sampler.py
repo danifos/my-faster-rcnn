@@ -95,6 +95,11 @@ class XMLHandler(xml.sax.ContentHandler):
 
     def endElement(self, tag):
         self.depth -= 1
+
+        if tag == 'bndbox' and self.depth == 3:
+            if self.targets[-1]['difficult'] == 1:
+                self.targets.pop()
+
         self.cur = ''
     
     def characters(self, cnt):
@@ -102,6 +107,8 @@ class XMLHandler(xml.sax.ContentHandler):
             self.targets[-1]['class_idx'] = name2idx[cnt]
         elif self.cur in ('xmin', 'ymin', 'xmax', 'ymax') and self.depth == 4:
             self.targets[-1]['bbox'].append(eval(cnt))
+        elif self.cur == 'difficult':
+            self.targets[-1]['difficult'] = eval(cnt)
 
 
 class VOCDetection(Dataset):
@@ -164,6 +171,7 @@ def collate(batch):
     x, y, a = batch[0]
     x = x.unsqueeze(0)
     return x, y, a
+
 
 def data_loader(dataset, shuffle=True):
     num_workers = 8

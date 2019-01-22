@@ -55,7 +55,7 @@ transform = T.Compose([
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
 #coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
 voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir,
-                         transform=transform, subset=32)
+                         transform=transform)
 voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                         transform=transform, flip=False)
 

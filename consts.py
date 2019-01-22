@@ -60,7 +60,8 @@ voc_names = ('', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
              'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
 name2idx = {}
 for i, name in enumerate(voc_names):
-    name2idx[name] = i
+    if i != 0:
+        name2idx[name] = i
 
 
 # %% Basic data type
