@@ -68,7 +68,7 @@ loader_test = data_loader(voc_test)
 
 # %% Initialization
 
-def init():
+def init(load_model=True):
     """
     Initialize the model, epoch and step, loss and mAP summary, hyper-parameters.
     """
@@ -90,7 +90,7 @@ def init():
     else:  # there's not, make one
         os.mkdir(logdir)
 
-    stage_init(summary_dic, files_dic)
+    stage_init(summary_dic, files_dic, load_model)
 
 
 def search_files(files):
@@ -128,7 +128,7 @@ def search_files(files):
     return dic
 
 
-def stage_init(summary_dic, files_dic):
+def stage_init(summary_dic, files_dic, load_model):
     global model, epoch, step
     global summary
 
@@ -160,10 +160,9 @@ def stage_init(summary_dic, files_dic):
         if e <= epoch:
             lr_decay()
 
-    model = FasterRCNN(params)
-
-    # move to GPU
-    model = model.to(device=device)
+    if load_model:
+        model = FasterRCNN(params)
+        model = model.to(device=device)  # move to GPU
 
 
 # %% Save

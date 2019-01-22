@@ -7,6 +7,8 @@ Created on Mon Nov  5 15:01:26 2018
 """
 
 import torch
+import numpy as np
+import random
 
 # %% compute the size of the 9 anchors
 
@@ -80,4 +82,9 @@ bbox_normalize_stds = Tensor((0.1, 0.1, 0.2, 0.2))
 # %% Settings
 
 low_memory = True  # Save GPU memory in a local machine
-evaluating = False  # when True, sample all images regardless of low_memory
+
+rng_seed = 3  # for reproducibility
+random.seed(rng_seed)
+np.random.seed(rng_seed)
+torch.manual_seed(rng_seed)
+torch.cuda.manual_seed(rng_seed)

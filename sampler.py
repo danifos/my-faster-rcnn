@@ -21,7 +21,6 @@ from PIL import Image
 from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
 from consts import Tensor, LongTensor, dtype, device
-from consts import evaluating, low_memory
 from consts import bbox_normalize_means, bbox_normalize_stds
 
 import line_profiler
@@ -64,7 +63,7 @@ class CocoDetection(Dataset):
         for target in targets:
             target['class_idx'] = id2idx[target['category_id']]
         
-        img, targets = transform_image(img, targets, self.transform, self.flip)
+        img, targets = transform_image(img, targets, self.transform)
 
         return img, targets
 
@@ -150,7 +149,7 @@ class VOCDetection(Dataset):
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         shape = (img.width, img.height)
-        img, targets = transform_image(img, targets, self.transform)
+        img, targets = transform_image(img, targets, self.transform, self.flip)
         info = {'shape': shape, 'scale': targets[0]['scale'], 'image_id': pre}
 
         return img, targets, info

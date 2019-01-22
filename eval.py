@@ -14,8 +14,6 @@ from time import time
 
 import torchvision.transforms as T
 
-import consts
-consts.evaluating = True
 from sampler import VOCDetection, data_loader
 from consts import voc_test_data_dir, voc_test_ann_dir
 from consts import imagenet_norm, voc_names
@@ -66,7 +64,7 @@ def main():
         T.Normalize(**imagenet_norm)
     ])
     voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                            transform=transform)
+                            transform=transform, flip=False)
     loader_test = data_loader(voc_test, shuffle=False)
 
     train.logdir = args.logdir
@@ -77,7 +75,12 @@ def main():
         os.mkdir(savedir)
         print('Create new dir')
     except:
-        print('Rewrite existing dir')
+        print('Rewrite existing dir "{}"?'.format(savedir), end=' ')
+        ans = '\0'
+        while not ans == '' or ans == 'yes' or ans == 'no':
+            ans = input('[yes]/no: ')
+        if ans == 'no':
+            os._exit(0)
 
     open_files()
     

@@ -6,14 +6,12 @@ Created on Mon Nov  5 14:52:23 2018
 @author: Ruijie Ni
 """
 
-import os
 import numpy as np
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
 
-from consts import num_classes, dtype, device, Tensor, low_memory
+from consts import dtype, device, Tensor, low_memory
 
 from time import time
 

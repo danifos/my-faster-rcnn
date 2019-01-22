@@ -56,7 +56,7 @@ def plot_curves(x, Y, tau, filename, legend=None):
     plt.plot([-10000, 100000], [0, 0], linewidth=2, color='grey')
     plt.plot([0, 0], [-100, 1000], linewidth=2, color='grey')
     plt.xlim(xlim)
-    plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))])
+    plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))/2])
     plt.grid()
     for axis in ['top', 'right']:
         ax.spines[axis].set_linewidth(0)
@@ -123,7 +123,7 @@ def main():
     args = parser.parse_args()
     import train
     train.logdir = args.logdir
-    train.init()
+    train.init(load_model=False)
     plot_summary(train.logdir, train.summary)
 
 
