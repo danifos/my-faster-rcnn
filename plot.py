@@ -46,17 +46,23 @@ def plot_curves(x, Y, tau, filename, legend=None):
     fig = plt.figure()
     ax = fig.add_subplot(111)
     lines = []
+    colors = []
     for i in range(len(Y)):
-        line = plt.plot(x, Y[i], linewidth=3, alpha=0.25)[0]
         line = plt.plot(x, [pair[i + 1] for pair in smooth],
-                        color=line.get_c(), linewidth=3)[0]
-        lines.append(line)
+                        linewidth=3)[0]
+        colors.append(line.get_c())
     xlim = plt.xlim()
     ylim = plt.ylim()
+    plt.cla()
+    for i in range(len(Y)):
+        plt.plot(x, Y[i], linewidth=3, color=colors[i], alpha=0.25)
+        line = plt.plot(x, [pair[i + 1] for pair in smooth],
+                        color=colors[i], linewidth=3)[0]
+        lines.append(line)
     plt.plot([-10000, 100000], [0, 0], linewidth=2, color='grey')
     plt.plot([0, 0], [-100, 1000], linewidth=2, color='grey')
     plt.xlim(xlim)
-    plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))/2])
+    plt.ylim([ylim[0], max(ylim[1], int(ylim[1]))])
     plt.grid()
     for axis in ['top', 'right']:
         ax.spines[axis].set_linewidth(0)

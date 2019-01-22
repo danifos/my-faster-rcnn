@@ -134,7 +134,9 @@ def compute_AP(x, y, a, model, verbose):
 
 def compute_precision(lst, targets, threshold=0.5):
     """
-    Compute the TP and TP+FP for an image and every object class
+    Compute the TP and TP+FP for an image and every object class.
+    It's fine to compute precision directly using the parameterized
+    outputs, because they will be scaled in the same way as targets.
 
     Inputs:
         - lst: List of predicted (bounding box, confidence, class index)
