@@ -55,8 +55,8 @@ for i, d in enumerate(idx2id):
     id2idx[d] = i+1
 
 # This is for Pascal VOC 2007
-voc_names = ('', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
-             'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
+voc_names = ('', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
+             'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
              'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
 name2idx = {}
 for i, name in enumerate(voc_names):

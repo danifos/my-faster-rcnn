@@ -55,7 +55,7 @@ transform = T.Compose([
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
 #coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
 voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir,
-                         transform=transform)
+                         transform=transform, subset=32)
 voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                         transform=transform, flip=False)
 
@@ -183,10 +183,8 @@ def save_summary():
 # %% Training procedure
 
 def get_optimizer():
-    return optim.SGD(model.parameters(),
-                     lr=learning_rate,
-                     momentum=0.9,
-                     weight_decay=weight_decay)
+    return model.get_optimizer(learning_rate=learning_rate,
+                               weight_decay=weight_decay)
 
 
 def lr_decay(decay=10):
@@ -313,6 +311,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
+    parser.add_argument('-c', '--check_every', type=int, default=1000000)
     parser.add_argument('-s', '--save_every', type=int, default=5)
     parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
     parser.add_argument('-d', '--decay_epochs', type=str, default='12')
@@ -326,7 +325,9 @@ def main():
 
     init()
     while True:
-        if train(save_every=args.save_every):
+        ret = train(check_every=args.check_every,
+                    save_every=args.save_every)
+        if ret:
             break
     save_model(epoch, step)
 

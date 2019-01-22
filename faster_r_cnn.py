@@ -6,13 +6,11 @@ Created on Wed Oct 31 22:59:53 2018
 @author: Ruijie Ni
 """
 
-import numpy as np
-
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torchvision
 
-from utility import clip_box
 from consts import num_classes, num_anchors
 
 
@@ -132,6 +130,10 @@ class FasterRCNN(nn.Module):
         super(FasterRCNN, self).__init__()
         pretrained = False if params else True
         VGG = torchvision.models.vgg16(pretrained)
+        # Freeze the first 4 conv layers
+        for p in list(VGG.features.parameters())[:8]:
+            p.requires_grad = False
+
         # The features of vgg16, with no max pooling at the end
         self.CNN = nn.Sequential(*list(VGG.features.children())[:-1])
         # The region proposal network
@@ -139,8 +141,8 @@ class FasterRCNN(nn.Module):
         # 2 fc layers of 4096 as the head of Fast R-CNN
         self.RCNN = FastRCNN(
             nn.Sequential(*list(VGG.classifier.children())[:-1]))
-        self.submodules = [self.CNN, self.RPN, self.RCNN]
-        
+
+        self.optimizer = None
         if params:
             # Load parameters
             print('Loaded pre-trained model')
@@ -148,6 +150,28 @@ class FasterRCNN(nn.Module):
         else:
             # And randomize the parameters otherwise
             print('Initialized model randomly')
-            for child in self.submodules[1:]:
+            for child in (self.RPN, self.RCNN):
                 child.weight_init()
-        
+
+    def get_optimizer(self, learning_rate, weight_decay):
+        if self.optimizer:
+            optimizer = self.optimizer
+            self.optimizer = None
+            return optimizer
+        params = []
+        for name, param in dict(self.named_parameters()).items():
+            if param.requires_grad:
+                if 'bias' in name:
+                    params.append({'params': [param],
+                                   'lr': learning_rate*2,
+                                   'weight_decay': 0})
+                else:
+                    params.append({'params': [param],
+                                   'lr': learning_rate,
+                                   'weight_decay': weight_decay})
+        return optim.SGD(params, momentum=0.9)
+
+    def lr_decay(self, decay=10):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] /= decay
+        return self.optimizer
