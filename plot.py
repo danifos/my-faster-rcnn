@@ -16,18 +16,18 @@ import visdom
 
 # %% Utils for plotting results
 
-def plot_summary(logdir, summary, tau=200):
+def plot_summary(logdir, summary, mute, tau=200):
     # plot number of samplers
     data = [summary['samples']['rpn'],
             summary['samples']['roi']]
     plot_curves([i for i in range(len(data[0]))], data,
-                tau, os.path.join(logdir, 'samples.pdf'),
+                mute, tau, os.path.join(logdir, 'samples.pdf'),
                 legend=['rpn samples', 'roi samples'])
 
     # plot loss
     data = summary['loss']['total']
     plot_curves([i for i in range(len(data))], [data],
-                tau, os.path.join(logdir, 'loss.pdf'))
+                mute, tau, os.path.join(logdir, 'loss.pdf'))
 
     # plot 4 losses
     meta = summary['loss']['single']
@@ -36,18 +36,18 @@ def plot_summary(logdir, summary, tau=200):
         plot_curves([i for i in range(len(data))],
                     [[data[i][j] for i in range(len(data))]
                      for j in range(len(data[0]))],
-                    tau, os.path.join(logdir, t+'_losses.pdf'),
+                    mute, tau, os.path.join(logdir, t+'_losses.pdf'),
                     legend=['rpn '+t+' loss', 'roi '+t+' loss'])
 
     # plot mAP
     data = [[t[1] for t in summary['map']['train']],
             [t[1] for t in summary['map']['test']]]
-    plot_curves([t[0] for t in summary['map']['test']],
-                data, tau, os.path.join(logdir, 'map.pdf'),
+    plot_curves([t[0] for t in summary['map']['test']], data,
+                mute, tau, os.path.join(logdir, 'map.pdf'),
                 legend=['train mAP', 'test mAP'])
 
 
-def plot_curves(x, Y, tau, filename, legend=None):
+def plot_curves(x, Y, mute, tau, filename, legend=None):
     smooth = weighted_linear_regression(
         np.hstack([np.array(x).reshape((-1, 1)), np.array(Y).T]),
         tau, stretch=64 if len(x) > 100 else 4
@@ -80,7 +80,8 @@ def plot_curves(x, Y, tau, filename, legend=None):
     if legend:
         plt.legend(lines, legend)
     plt.savefig(filename, format='pdf')
-    plt.show()
+    if not mute:
+        plt.show()
 
 
 def weighted_linear_regression(summary, tau, stretch=64):
@@ -134,11 +135,13 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
+    parser.add_argument('-m', '--mute',
+                        action='store_true', default=False)
     args = parser.parse_args()
     import train
     train.logdir = args.logdir
     train.init(load_model=False)
-    plot_summary(train.logdir, train.summary)
+    plot_summary(train.logdir, train.summary, args.mute)
 
 
 if __name__ == '__main__':

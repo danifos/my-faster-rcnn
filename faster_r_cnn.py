@@ -125,7 +125,7 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, params, old_ver=True):
+    def __init__(self, params, old_ver=False):
         """
         Inputs:
             - params: Dictionary of {component : filename} to load state dict

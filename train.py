@@ -157,8 +157,8 @@ def stage_init(summary_dic, files_dic, load_model):
 
 # %% Save
 
-def save_model(epoch, step):
-    filename = os.path.join(logdir, 'param-{}-{}.pth'.format(epoch, step))
+def save_model(e, s):
+    filename = os.path.join(logdir, 'param-{}-{}.pth'.format(e, s))
     model.save(filename)
 
 
@@ -166,6 +166,11 @@ def save_summary():
     file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
     pickle.dump(summary, file)
     file.close()
+
+
+def save(*args):
+    save_summary()
+    save_model(*args)
 
 
 # %% Training procedure
@@ -180,7 +185,7 @@ def lr_decay(decay=10):
     print('Learning rate: {:.1e} -> {:.1e}'.
           format(learning_rate, learning_rate / decay))
     learning_rate /= decay
-    return model.lr_decay(decay)
+    return model.lr_decay(decay) if model else None
 
 
 def train(print_every=1, check_every=0, save_every=5):
@@ -214,32 +219,30 @@ def train(print_every=1, check_every=0, save_every=5):
                 voc_train.mute = True
                 voc_test.mute = True
 
-                train_mAP = evaluate(model, loader_val, 100)
+                train_mAP = evaluate(model, loader_val, 200)
                 summary['map']['train'].append((step, train_mAP))
-                print('train mAP = {:.1f}%'.format(100 * train_mAP), end=', ')
+                print('train mAP = {:.1f}%'.format(100 * train_mAP))
 
-                test_mAP = evaluate(model, loader_test, 100)
+                test_mAP = evaluate(model, loader_test, 200)
                 summary['map']['test'].append((step, test_mAP))
                 print('test mAP = {:.1f}%'.format(100 * test_mAP))
 
                 voc_train.mute = False
                 voc_test.mute = False
 
-                save_summary()
+                save(e, step)
 
             step += 1
 
         # save model
         if (e+1) % save_every == 0:
-            save_summary()
-            save_model(e, step)
+            save(e, step)
             sleep_time = 0
             print('Next epoch will start {:d}s later'.format(sleep_time))
             sleep(sleep_time)
 
         if e+1 in decay_epochs:
-            save_summary()
-            save_model(e, step)
+            save(e, step)
             epoch = e+1
             optimizer = lr_decay()
 
@@ -263,7 +266,7 @@ def train_step(x, y, a, optimizer):
 # %% Main
 
 def plot():
-    plot_summary(logdir, summary)
+    plot_summary(logdir, summary, True)
 
 
 def main():
@@ -286,8 +289,7 @@ def main():
 
     init()
     train(check_every=args.check_every, save_every=args.save_every)
-    save_summary()
-    save_model(epoch, step)
+    save(epoch, step)
 
 
 if __name__ == '__main__':

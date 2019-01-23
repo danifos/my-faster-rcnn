@@ -14,7 +14,7 @@ from time import time
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, sampler
+from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from PIL import Image
 

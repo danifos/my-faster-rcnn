@@ -115,21 +115,29 @@ def evaluate(model, loader, total_batches=0, check_every=0,
     total_iters = total_batches if total_batches else len(loader)
     num_batches = 0
     model.eval()
+    tic = time()
     for x, y, a in loader:
         if len(y) == 0:
             continue
         check_image(x, y, a, model, matches, targets, verbose)
 
         num_batches += 1
-        width = int(os.popen('stty size', 'r').read().split()[1])-10
-        tokens = '>'*int(width*num_batches/total_iters)
-        print('\r{:4d}/{:4d} {}'.
-              format(num_batches, total_iters, tokens), end='')
+
+        eta = int((time()-tic) / num_batches * (total_iters-num_batches))
+        prefix = '[{:4d}/{:4d}] '.format(num_batches, total_iters)
+        suffix = ' [eta: {:02d}m{:02d}s]'.format(eta//60, eta % 60)
+        width = int(os.popen('stty size', 'r').read().split()[1])
+        width -= len(prefix) + len(suffix)
+        len_token = int(width*num_batches/total_iters)
+        tokens = '>'*len_token + ' '*(width-len_token)
+        print('\r' + prefix + tokens + suffix, end='')
+
         if check_every and (num_batches+1) % check_every == 0:
             mAP = compute_mAP(matches, targets, show_ap)
             print('\nmAP: {:.1f}'.format(mAP * 100))
         if num_batches == total_batches:
             break
+    print()
 
     model.train()
 
