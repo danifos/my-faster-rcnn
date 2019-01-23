@@ -12,11 +12,9 @@ import os
 import argparse
 from time import time
 
-import torchvision.transforms as T
-
 from sampler import VOCDetection, data_loader
 from consts import voc_test_data_dir, voc_test_ann_dir
-from consts import imagenet_norm, voc_names
+from consts import transform, voc_names
 import train
 from test import predict
 from utility import results_to_raw
@@ -59,10 +57,6 @@ def main():
     
     # %% Setup
 
-    transform = T.Compose([
-        T.ToTensor(),
-        T.Normalize(**imagenet_norm)
-    ])
     voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                             transform=transform, flip=False)
     loader_test = data_loader(voc_test, shuffle=False)

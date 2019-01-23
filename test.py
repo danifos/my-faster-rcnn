@@ -7,6 +7,7 @@ Created on Tue Nov  6 11:30:00 2018
 """
 
 from time import time
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -53,9 +54,10 @@ def predict(model, img, info):
     return results
 
 
-def evaluate(model, loader, total_batches=0, verbose=False, show_ap=False):
+def evaluate(model, loader, total_batches=0, check_every=0,
+             verbose=False, show_ap=False):
     """
-    Check mAP and recall of a dataset.
+    Check mAP of a dataset.
     
     Inputs:
         - model: The Faster R-CNN model
@@ -65,11 +67,10 @@ def evaluate(model, loader, total_batches=0, verbose=False, show_ap=False):
     Returns:
         - mAP: A single number
     """
-    # Lists of (tp, confidence) for each class (idx=class_idx-1)
     matches = [[] for _ in range(num_classes)]
-    # Number of objects (difficult ones excluded) for each class
     targets = [0 for _ in range(num_classes)]
 
+    total_iters = total_batches if total_batches else len(loader)
     num_batches = 0
     model.eval()
     for x, y, a in loader:
@@ -78,9 +79,31 @@ def evaluate(model, loader, total_batches=0, verbose=False, show_ap=False):
         check_image(x, y, a, model, matches, targets, verbose)
 
         num_batches += 1
+        width = int(os.popen('stty size', 'r').read().split()[1])-10
+        tokens = '>'*int(width*num_batches/total_iters)
+        print('\r{:4d}/{:4d} {}'.
+              format(num_batches, total_iters, tokens), end='')
+        if check_every and (num_batches+1) % check_every == 0:
+            mAP = compute_mAP(matches, targets, show_ap)
+            print('\nmAP: {:.1f}'.format(mAP * 100))
         if num_batches == total_batches:
             break
 
+    model.train()
+
+    return compute_mAP(matches, targets, show_ap)
+
+
+def compute_mAP(matches, targets, show_ap):
+    """
+    Compute mAP throughout all classes.
+    Inputs:
+        - matches: Lists of (tp, confidence)
+          for each class (idx=class_idx-1)
+        - targets: Number of objects (difficult ones excluded)
+          for each class
+    Returns: mAP
+    """
     mAP = num = 0
     for i in range(num_classes):
         AP = compute_AP(matches[i], targets[i])
@@ -92,15 +115,13 @@ def evaluate(model, loader, total_batches=0, verbose=False, show_ap=False):
         num += 1
     mAP /= num
 
-    model.train()
-
     return mAP
 
 
 def compute_AP(match, n_pos):
     """
     Check precision of a certain class.
-    Input:
+    Inputs:
         - match: List of (tp, confidence)
         - n_pos: Number of ground-truth objects in this class
     Returns:
@@ -226,11 +247,13 @@ def init(logdir, test_set):
     loader = None
     if test_set:
         from sampler import VOCDetection, data_loader
-        from consts import voc_test_data_dir, voc_test_ann_dir
+        from consts import voc_test_data_dir, voc_test_ann_dir, transform
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                                transform=train.transform, flip=False)
+                                transform=transform, flip=False)
+        voc_test.mute = True
         loader = data_loader(voc_test, shuffle=False)
     else:
+        train.voc_train.mute = True
         loader = train.loader_train
     return train.model, loader
 
@@ -244,9 +267,11 @@ def main():
     parser.add_argument('-t', '--test_set',
                         action='store_true', default=False)
     parser.add_argument('-n', '--num_batches', type=int, default=0)
+    parser.add_argument('-c', '--check_every', type=int, default=0)
     args = parser.parse_args()
     model, loader = init(args.logdir, args.test_set)
-    mAP = evaluate(model, loader, args.num_batches, args.verbose, True)
+    mAP = evaluate(model, loader, args.num_batches, args.check_every,
+                   args.verbose, True)
     print('\nmAP: {:.1f}%'.format(100 * mAP))
 
 

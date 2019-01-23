@@ -20,10 +20,8 @@ from PIL import Image
 
 from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
 from consts import anchor_sizes, num_anchors, id2idx, name2idx
-from consts import Tensor, LongTensor, dtype, device
-from consts import bbox_normalize_means, bbox_normalize_stds
-
-import line_profiler
+from consts import Tensor, LongTensor, device
+from consts import feature_scale, bbox_normalize_means, bbox_normalize_stds
         
 
 # %% CoCoDetection class
@@ -237,7 +235,7 @@ def transform_image(img, targets, transform, random_flip=True,
 
 # %% Anchors creator and sampler (256 each)
 
-def create_anchors(img, strip=16):
+def create_anchors(img):
     """
     Inputs:
         - img: The input image
@@ -245,16 +243,16 @@ def create_anchors(img, strip=16):
         - Tensor of anchors of size 4xAxHxW, scale as input
     """
     w, h = img.shape[3], img.shape[2]
-    W, H = w//strip, h//strip  # ! Note that it may be not 16 if the CNN is not vgg16
+    W, H = w//feature_scale, h//feature_scale
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
-    wscale = hscale = strip
+    wscale = hscale = feature_scale
     
     anchors = Tensor(4, num_anchors, H, W)
     x = (torch.arange(W, dtype=torch.float32, device=device)*wscale).view(1, 1, 1, -1)
     y = (torch.arange(H, dtype=torch.float32, device=device)*hscale).view(1, 1, -1, 1)
     for i, size in enumerate(anchor_sizes):
-        anchors[0,i] = x - size[0]/2 + strip/2
-        anchors[1,i] = y - size[1]/2 + strip/2
+        anchors[0,i] = x - size[0]/2 + feature_scale/2
+        anchors[1,i] = y - size[1]/2 + feature_scale/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
     
@@ -382,8 +380,6 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     post_nms_num = 2000 if training else 300
 
     # 1. Generate proposals from bbox deltas and shifted anchors
-    H, W = y_cls.shape[2:]
-    
     anchors = create_anchors(img).view(4, -1)
     
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
@@ -397,7 +393,7 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     coords = clip_box(coords, img.shape[3], img.shape[2])
     
     # 3. remove predicted boxes with either height or width < threshold
-    coords, scores = filter_boxes(coords, int(16*im_scale),
+    coords, scores = filter_boxes(coords, int(feature_scale*im_scale),
                                   coords, scores)
     
     # 4. sort all (proposal, score) pairs by score from highest to lowest

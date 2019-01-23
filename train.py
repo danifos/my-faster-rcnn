@@ -14,14 +14,12 @@ import pickle
 from time import time, sleep
 import os
 
-import torchvision.transforms as T
-
 from sampler import CocoDetection, VOCDetection, data_loader
 from faster_r_cnn import FasterRCNN
 from consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir
-from consts import imagenet_norm
+from consts import transform
 from test import evaluate
 from plot import plot_summary
 
@@ -42,11 +40,6 @@ summary = None
 
 
 # %% COCO dataset
-
-transform = T.Compose([
-    T.ToTensor(),
-    T.Normalize(**imagenet_norm)
-])
 
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
 #coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
@@ -189,7 +182,7 @@ def lr_decay(decay=10):
     learning_rate /= decay
 
 
-def train(print_every=1, check_every=1000, save_every=5):
+def train(print_every=1, check_every=0, save_every=5):
     global model, epoch, step
 
     optimizer = get_optimizer()
@@ -213,7 +206,7 @@ def train(print_every=1, check_every=1000, save_every=5):
                 print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
                     it=step, loss=loss))
 
-            if step > 0 and step % check_every == 0:
+            if check_every and step > 0 and step % check_every == 0:
                 # evaluate the mAP
 
                 # Keep quite
@@ -281,7 +274,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
-    parser.add_argument('-c', '--check_every', type=int, default=1000000)
+    parser.add_argument('-c', '--check_every', type=int, default=0)
     parser.add_argument('-s', '--save_every', type=int, default=5)
     parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
     parser.add_argument('-d', '--decay_epochs', type=str, default='12')
