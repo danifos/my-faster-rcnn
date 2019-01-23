@@ -271,4 +271,4 @@ class FasterRCNN(nn.Module):
                       'optimizer': self.optimizer.state_dict()}
         torch.save(state_dict, filename)
 
-        print('Saved model successfully')
+        print('Saved model and optimizer successfully')

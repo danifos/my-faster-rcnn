@@ -97,7 +97,6 @@ class XMLHandler(xml.sax.ContentHandler):
         if tag == 'bndbox' and self.depth == 2:
             if self.targets[-1]['difficult'] == 1:
                 self.targets.pop()
-                print('exclude diff', end=' -> ')
 
         self.cur = ''
     

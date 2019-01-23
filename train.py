@@ -26,7 +26,7 @@ from plot import plot_summary
 
 # %% Basic settings
 
-# changed
+# Training strategy
 num_epochs = 16
 learning_rate = 1e-3
 weight_decay = 5e-5
@@ -126,9 +126,9 @@ def stage_init(summary_dic, files_dic, load_model):
     if summary_dic:
         summary = summary_dic
     else:
-        summary = {'samples':{'rpn':[], 'roi':[]},
-                   'loss':{'single':[], 'total':[]},
-                   'map':{'train':[], 'test':[]}}
+        summary = {'samples': {'rpn': [], 'roi': []},
+                   'loss': {'single': [], 'total': []},
+                   'map': {'train': [], 'test': []}}
 
     # Load model
     model = None
@@ -180,6 +180,7 @@ def lr_decay(decay=10):
     print('Learning rate: {:.1e} -> {:.1e}'.
           format(learning_rate, learning_rate / decay))
     learning_rate /= decay
+    return model.lr_decay(decay)
 
 
 def train(print_every=1, check_every=0, save_every=5):
@@ -240,10 +241,7 @@ def train(print_every=1, check_every=0, save_every=5):
             save_summary()
             save_model(e, step)
             epoch = e+1
-            lr_decay()
-            return False
-
-    return True
+            optimizer = lr_decay()
 
 
 def train_step(x, y, a, optimizer):
@@ -287,11 +285,7 @@ def main():
         decay_epochs = [decay_epochs]
 
     init()
-    while True:
-        ret = train(check_every=args.check_every,
-                    save_every=args.save_every)
-        if ret:
-            break
+    train(check_every=args.check_every, save_every=args.save_every)
     save_summary()
     save_model(epoch, step)
 
