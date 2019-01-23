@@ -184,27 +184,12 @@ def data_loader(dataset, shuffle=True, num_workers=8):
 
 # %% Transformation of images and targets for both dataset
 
-def transform_image(img, targets, transform, random_flip=True,
-                    min_size=600, max_size=1000):
+def transform_image(img, targets, transform, random_flip=True):
 
     flip = randrange(2) if random_flip else 0
 
-    # "Rescale the image such that the short side is s=600 pixels"
-    # And limit the longer side in max_size
     width, height = img.width, img.height
-    if height < width:
-        h = min_size
-        w = int(h/height*width+0.5)
-        if w > max_size:
-            w = max_size
-            h = int(w/width*height+0.5)
-    else:
-        w = min_size
-        h = int(w/width*height+0.5)
-        if h > max_size:
-            h = max_size
-            w = int(h/height*width+0.5)
-
+    w, h = scale_image(width, height)
     img = T.Resize((h, w))(img)
     img = T.RandomHorizontalFlip(flip)(img)
 
@@ -231,6 +216,29 @@ def transform_image(img, targets, transform, random_flip=True,
         bbox[3] -= bbox[1]
 
     return img, targets
+
+
+def scale_image(width, height, min_size=600, max_size=1000):
+    """
+    Rescale the image such that the short side is s=600 pixels;
+    And limit the longer side in max_size.
+    Inputs: original width and height
+    Returns: w and h after resizing
+    """
+    if height < width:
+        h = min_size
+        w = int(h/height*width+0.5)
+        if w > max_size:
+            w = max_size
+            h = int(w/width*height+0.5)
+    else:
+        w = min_size
+        h = int(w/width*height+0.5)
+        if h > max_size:
+            h = max_size
+            w = int(h/height*width+0.5)
+
+    return w, h
 
 
 # %% Anchors creator and sampler (256 each)

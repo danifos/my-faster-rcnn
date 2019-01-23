@@ -17,21 +17,62 @@ from consts import dtype, device, voc_names
 from consts import imagenet_norm
 
 
-def predict_raw(model, image):
+def predict_raw(model, image, visualize=True):
     """
     Predict the object in a raw image.
 
     Inputs:
         - model: Faster R-CNN model
-        - image: Un-processed Image
+        - image: Can be one of those:
+          - String (path / filename to the image)
+          - PIL Image (read by Image.open)
+          - Numpy array (read by opencv)
+          - [Tensor is supported by predict()]
     Returns:
         - results: Dict of
             - bbox: (x(left), y(top), x(right), y(bottom))
             - confidence
             - class_idx
     """
-    # TODO: Implement predict_raw()
-    pass
+    import cv2 as cv
+    from PIL import Image
+    import torchvision.transforms as T
+    from sampler import scale_image
+    from consts import Tensor, transform
+    from utility import results_to_raw
+
+    if isinstance(image, str):
+        image = Image.open(image)
+
+    if isinstance(image, Image.Image):
+        image = image.convert('RGB')
+        width, height = image.width, image.height
+        w, h = scale_image(width, height)
+        x = T.Resize((h, w))(image)
+        x = transform(x)
+        x.to(dtype=dtype, device=device)
+
+        image = T.ToTensor()(image).numpy()
+
+    elif isinstance(image, np.ndarray):
+        image = image[..., ::-1]
+        width, height = image.shape[1], image.shape[0]
+        w, h = scale_image(width, height)
+        x = cv.resize(image, (w, h), cv.INTER_CUBIC)
+        x = Tensor(x).transpose((2, 0, 1))
+        x = (x - imagenet_norm['mean']) / imagenet_norm['std']
+
+    else:
+        assert False, "Unsupported type"
+
+    results = model({'scale': (w, h)}, x)
+    results = results_to_raw(results, (w/width, h/height),
+                             width, height)
+
+    if visualize:
+        visualize_raw(image, results)
+
+    return results
 
 
 def predict(model, img, info):
@@ -44,7 +85,8 @@ def predict(model, img, info):
         - info: Assist info output by sampler
     Returns:
         - results: List of dicts of
-            - bbox: (x(left), y(top), w, h) after resizing
+            - bbox: (x(left), y(top), w, h) after resizing.
+              They have not yet been clipped to the boundary!
             - confidence
             - class_idx
     """
@@ -174,7 +216,7 @@ def check_image(x, y, a, model, matches, targets, verbose):
 def assign_detection(lst, targets, threshold=0.5):
     """
     Assign detection to ground-truth of an image if any.
-    Compute the TP and TP+FP for an image and every object class.
+    Find the TP and FP for an image and every object class.
     It's fine to compute precision directly using the parameterized
     outputs, because they will be scaled in the same way as targets.
 
@@ -212,16 +254,8 @@ def assign_detection(lst, targets, threshold=0.5):
     return matches
 
 
-def visualize_raw(image, results):
-    # TODO: implement visualize_raw()
-    pass
-
-
-def visualize(x, results, label=True):
-    mean = np.array(imagenet_norm['mean'])
-    std = np.array(imagenet_norm['std'])
-    img = x.detach().cpu().squeeze().numpy().transpose((1,2,0)) * std + mean
-    plt.imshow(img)
+def visualize_raw(image, results, label=True):
+    plt.imshow(image)
     for result in results:
         bbox = result['bbox']
         confidence = result['confidence']
@@ -236,6 +270,13 @@ def visualize(x, results, label=True):
                      '{}: {:.2f}'.format(voc_names[idx], confidence),
                      bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
+
+
+def visualize(x, results, label=True):
+    mean = np.array(imagenet_norm['mean'])
+    std = np.array(imagenet_norm['std'])
+    img = x.detach().cpu().squeeze().numpy().transpose((1, 2, 0)) * std + mean
+    visualize_raw(img, results, label)
 
 
 # %% Main
