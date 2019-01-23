@@ -63,7 +63,8 @@ voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
 # %% Data loders
 
 loader_train = data_loader(voc_train)
-loader_test = data_loader(voc_test)
+loader_val = data_loader(voc_train, num_workers=0)
+loader_test = data_loader(voc_test, num_workers=0)
 
 
 # %% Initialization
@@ -223,7 +224,7 @@ def train(print_every=1, check_every=1000, save_every=5):
                 voc_train.mute = True
                 voc_test.mute = True
 
-                train_mAP = evaluate(model, loader_train, 100)
+                train_mAP = evaluate(model, loader_val, 100)
                 summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}%'.format(100 * train_mAP), end=', ')
 

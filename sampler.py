@@ -176,8 +176,10 @@ def collate(batch):
     return x, y, a
 
 
-def data_loader(dataset, shuffle=True):
-    num_workers = 8
+def data_loader(dataset, shuffle=True, num_workers=8):
+    if num_workers == 0:
+        return DataLoader(dataset, batch_size=1, shuffle=shuffle,
+                          collate_fn=collate)
     return DataLoader(dataset, batch_size=1, shuffle=shuffle,
                       collate_fn=collate, num_workers=num_workers)
 
