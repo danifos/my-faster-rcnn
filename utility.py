@@ -6,6 +6,7 @@ Created on Mon Nov  5 14:52:23 2018
 @author: Ruijie Ni
 """
 
+import os
 import numpy as np
 
 import torch
@@ -408,3 +409,15 @@ def inv_parameterize(t, anchor, dtype=None):
     
     return bbox
 
+
+# %% Other
+
+def process_bar(t, num, total):
+    eta = int((t) / num * (total - num))
+    prefix = '[{:4d}/{:4d}] '.format(num, total)
+    suffix = ' [eta: {:02d}m{:02d}s]'.format(eta // 60, eta % 60)
+    width = int(os.popen('stty size', 'r').read().split()[1])
+    width -= len(prefix) + len(suffix)
+    len_token = int(width * num / total)
+    tokens = '>' * len_token + ' ' * (width - len_token)
+    print('\r' + prefix + tokens + suffix, end='')

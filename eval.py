@@ -17,7 +17,7 @@ from consts import voc_test_data_dir, voc_test_ann_dir
 from consts import transform, voc_names
 import train
 from test import predict
-from utility import results_to_raw
+from utility import results_to_raw, process_bar
 
 
 parser = argparse.ArgumentParser()
@@ -50,7 +50,6 @@ def append_result(image_id, class_idx, bbox, confidence):
         format(image_id, confidence,
                  bbox[0], bbox[1], bbox[2], bbox[3])
     print(string, file=files[class_idx])
-    print(string)
 
 
 def main():
@@ -59,6 +58,7 @@ def main():
 
     voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                             transform=transform, flip=False)
+    voc_test.mute = True
     loader_test = data_loader(voc_test, shuffle=False)
 
     train.logdir = args.logdir
@@ -82,15 +82,15 @@ def main():
     
     tic = time()
 
-    for x, _, a in loader_test:
+    for i, (x, _, a) in enumerate(loader_test):
         results = predict(model, x, a)
         results_to_raw(results, a['scale'], *a['shape'])
+        process_bar(time()-tic, i+1, len(loader_test))
         for result in results:
             append_result(a['image_id'], result['class_idx'],
                           result['bbox'], result['confidence'])
-    
-    toc = time()
-    print('Use time: {}s'.format(toc-tic))
+
+    print('Use time: {}s'.format(time()-tic))
 
     # %% The end
 
