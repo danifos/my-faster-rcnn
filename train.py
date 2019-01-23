@@ -14,14 +14,10 @@ import pickle
 from time import time, sleep
 import os
 
-import torch
-import torch.optim as optim
 import torchvision.transforms as T
 
 from sampler import CocoDetection, VOCDetection, data_loader
-from sampler import sample_anchors, create_proposals, sample_proposals
 from faster_r_cnn import FasterRCNN
-from utility import RPN_loss, RoI_loss
 from consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
 from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir
@@ -40,7 +36,7 @@ decay_epochs = []
 
 # Global variables
 logdir = ''
-model = None
+model: FasterRCNN = None
 epoch = step = None
 summary = None
 
@@ -260,38 +256,15 @@ def train(print_every=1, check_every=1000, save_every=5):
 def train_step(x, y, a, optimizer):
     x = x.to(device=device, dtype=dtype)
 
-    loss = None
-
-    features = model.CNN(x)  # extract features from x
-    # Get 1x(2*A)xHxW classification scores,
-    # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
-    RPN_cls, RPN_reg = model.RPN(features)
-
-    # Sample 256 anchors
-    anchor_samples, labels, nas = sample_anchors(x, y)
-    # Compute RPN loss
-    rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
-
-    # Create about 2000 region proposals
-    proposals = create_proposals(RPN_cls, RPN_reg, x, a['scale'][0], training=True)
-    # Sample 128 proposals
-    proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
-    # Get Nx81 classification scores
-    # and Nx324 regression coordinates of Fast R-CNN
-    RCNN_cls, RCNN_reg = model.RCNN(features, x, proposal_samples)
-    # Compute RoI loss, has in-place error if do not use detach()
-    roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
-
-    loss = rpn_loss + roi_loss
+    loss, ret = model(a, x, y)
 
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-    summary['samples']['rpn'].append(nas)
-    summary['samples']['roi'].append(nps)
-    summary['loss']['single'].append({'rpn_cls':rpn_cls, 'rpn_reg':rpn_reg,
-                                        'roi_cls':roi_cls, 'roi_reg':roi_reg})
+    summary['samples']['rpn'].append(ret['anchor_samples'])
+    summary['samples']['roi'].append(ret['proposal_samples'])
+    summary['loss']['single'].append(ret['losses'])
 
     return loss.item()
 

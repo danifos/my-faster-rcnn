@@ -10,14 +10,10 @@ from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-import torch
-import torch.nn as nn
-from sampler import create_proposals
-from utility import _NMS, _IoU, inv_parameterize
+from utility import _IoU
 from consts import num_classes
 from consts import dtype, device, voc_names
 from consts import imagenet_norm
-from consts import bbox_normalize_means, bbox_normalize_stds
 
 
 def predict_raw(model, image):
@@ -46,39 +42,13 @@ def predict(model, img, info):
         - img: Input img sampled by sampler
         - info: Assist info output by sampler
     Returns:
-        - results: Dict of
+        - results: List of dicts of
             - bbox: (x(left), y(top), w, h) after resizing
             - confidence
             - class_idx
     """
     x = img.to(device=device, dtype=dtype)
-    features = model.CNN(x)
-    RPN_cls, RPN_reg = model.RPN(features)
-    # 300 top-ranked proposals at test time
-    proposals = create_proposals(RPN_cls, RPN_reg,
-                                 x, info['scale'][0], training=False)
-
-    RCNN_cls, RCNN_reg = model.RCNN(features, x, proposals.t())
-    N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
-    roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
-    roi_coords = RCNN_reg.view(N,M,4).permute(2,0,1)
-    roi_coords = roi_coords * bbox_normalize_stds.view(4,1,1) \
-                            + bbox_normalize_means.view(4,1,1)
-    proposals = proposals.unsqueeze(2).expand_as(roi_coords)
-    roi_coords = inv_parameterize(roi_coords, proposals)
-
-    roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
-    lst = []  # list of predicted dict {bbox, confidence, class_idx}
-    for i in range(N):
-        confidence = torch.max(roi_scores[i])
-        idx = np.where(roi_scores[i] == confidence)[0][0]
-        if idx != 0:  # ignore background class
-            bbox = roi_coords[:,i,idx]
-            lst.append({'bbox': bbox.detach().cpu().numpy(),
-                        'confidence': confidence.item(),
-                        'class_idx': idx})
-
-    results = _NMS(lst)
+    results = model(info, x)
 
     return results
 

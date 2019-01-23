@@ -6,11 +6,16 @@ Created on Wed Oct 31 22:59:53 2018
 @author: Ruijie Ni
 """
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 
+from sampler import create_proposals, sample_anchors, sample_proposals
+from utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
+from consts import bbox_normalize_stds, bbox_normalize_means
 from consts import num_classes, num_anchors
 
 
@@ -158,6 +163,85 @@ class FasterRCNN(nn.Module):
             for child in (self.RPN, self.RCNN):
                 child.weight_init()
             print('Initialized model randomly')
+
+    def forward(self, a, x, y=None):
+        """
+        Inputs:
+            - a: Info about the image
+            - x: Input tensor on GPU
+            - y: Ground-truth targets or the image.
+              if y is provided, the procedure is training,
+              otherwise it is testing
+        Returns:
+            - When training:
+                - loss: Scalar Tensor of the loss
+                - summary: Dict
+                    - anchor_samples: Number of positive anchor samples
+                    - proposal_samples: Number of positive proposal samples
+                    - losses: Dict {rpn_cls, roi_cls, rpn_reg, roi_reg}
+                      Floats of the 4 losses
+            - When testing:
+              results: Lists of dicts of
+                - bbox: Numpy array (x(left), y(top), w, h)
+                - confidence: Float
+                - class_idx: Int
+        """
+        training = True if y else False
+
+        features = self.CNN(x)  # extract features from x
+
+        # Get 1x(2*A)xHxW classification scores,
+        # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
+        RPN_cls, RPN_reg = self.RPN(features)
+
+        # Create about 2000 region proposals / 300 top-ranked proposals at test time
+        proposals = create_proposals(RPN_cls, RPN_reg,
+                                     x, a['scale'][0], training=training)
+
+        if training:
+            # Sample 256 anchors
+            anchor_samples, labels, nas = sample_anchors(x, y)
+            # Compute RPN loss
+            rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
+
+            # Sample 128 proposals
+            proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
+            # Get Nx81 classification scores
+            # and Nx324 regression coordinates of Fast R-CNN
+            RCNN_cls, RCNN_reg = self.RCNN(features, x, proposal_samples)
+            # Compute RoI loss, has in-place error if do not use detach()
+            roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
+
+            loss = rpn_loss + roi_loss
+            summary = {'anchor_samples': nas,
+                       'proposal_samples': nps,
+                       'losses': {'rpn_cls': rpn_cls, 'rpn_reg': rpn_reg,
+                                  'roi_cls': roi_cls, 'roi_reg': roi_reg}}
+            return loss, summary
+
+        else:
+            RCNN_cls, RCNN_reg = self.RCNN(features, x, proposals.t())
+            N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
+            roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
+            roi_coords = RCNN_reg.view(N, M, 4).permute(2, 0, 1)
+            roi_coords = roi_coords * bbox_normalize_stds.view(4, 1, 1) \
+                         + bbox_normalize_means.view(4, 1, 1)
+            proposals = proposals.unsqueeze(2).expand_as(roi_coords)
+            roi_coords = inv_parameterize(roi_coords, proposals)
+
+            roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
+            lst = []  # list of predicted dict {bbox, confidence, class_idx}
+            for i in range(N):
+                confidence = torch.max(roi_scores[i])
+                idx = np.where(roi_scores[i] == confidence)[0][0]
+                if idx != 0:  # ignore background class
+                    bbox = roi_coords[:, i, idx]
+                    lst.append({'bbox': bbox.detach().cpu().numpy(),
+                                'confidence': confidence.item(),
+                                'class_idx': idx})
+
+            results = _NMS(lst)
+            return results
 
     def get_optimizer(self, learning_rate, weight_decay):
         params = []
