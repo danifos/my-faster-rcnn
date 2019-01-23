@@ -125,6 +125,7 @@ class VOCDetection(Dataset):
         self.ann = ann
         self.transform = transform
         self.flip = flip
+        self.mute = False
         
         self.images = os.listdir(root)
         self.parser = xml.sax.make_parser()
@@ -152,7 +153,8 @@ class VOCDetection(Dataset):
         targets = []
         self.parser.setContentHandler(XMLHandler(targets))
         self.parser.parse(os.path.join(self.ann, pre+'.xml'))
-        print(pre, targets)
+        if not self.mute:
+            print(pre, targets)
 
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         shape = (img.width, img.height)

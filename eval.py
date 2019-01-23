@@ -79,8 +79,8 @@ def main():
         ans = '\0'
         while not ans == '' or ans == 'yes' or ans == 'no':
             ans = input('[yes]/no: ')
-        if ans == 'no':
-            os._exit(0)
+            if ans == 'no':
+                os._exit(0)
 
     open_files()
     

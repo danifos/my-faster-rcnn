@@ -39,10 +39,19 @@ def plot_summary(logdir, summary, tau=200):
                     tau, os.path.join(logdir, t+'_losses.pdf'),
                     legend=['rpn '+t+' loss', 'roi '+t+' loss'])
 
+    # plot mAP
+    data = [[t[1] for t in summary['map']['train']],
+            [t[1] for t in summary['map']['test']]]
+    plot_curves([t[0] for t in summary['map']['test']],
+                data, tau, os.path.join(logdir, 'map.pdf'),
+                legend=['train mAP', 'test mAP'])
+
 
 def plot_curves(x, Y, tau, filename, legend=None):
     smooth = weighted_linear_regression(
-        np.hstack([np.array(x).reshape((-1, 1)), np.array(Y).T]), tau)
+        np.hstack([np.array(x).reshape((-1, 1)), np.array(Y).T]),
+        tau, stretch=64 if len(x) > 100 else 4
+    )
     fig = plt.figure()
     ax = fig.add_subplot(111)
     lines = []
@@ -74,9 +83,8 @@ def plot_curves(x, Y, tau, filename, legend=None):
     plt.show()
 
 
-def weighted_linear_regression(summary, tau):
+def weighted_linear_regression(summary, tau, stretch=64):
     smooth = [[pair[0]] for pair in summary]
-    stretch = 64
 
     mat = np.array(summary)
     n = mat.shape[0]

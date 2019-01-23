@@ -193,13 +193,11 @@ def lr_decay(decay=10):
 
 
 def train(print_every=1, check_every=1000, save_every=5):
-    # ===================  Preparations for debugging  ========================
-    tic = time()
-    # =========================================================================
     global model, epoch, step
 
     optimizer = get_optimizer()
     model.train()
+    tic = time()
 
     for e in range(epoch, num_epochs):
         print('- Epoch {}'.format(e))
@@ -207,15 +205,12 @@ def train(print_every=1, check_every=1000, save_every=5):
         for x, y, a in loader_train:  # an image and its targets
             if len(y) == 0: continue  # no target in this image
 
-            # ==========================  Debug  ==============================
+            loss = train_step(x, y, a, optimizer)
+            summary['loss']['total'].append(loss)
+
             toc = time()
             print('Use time: {:.2f}s'.format(toc-tic))
             tic = toc
-            # =================================================================
-
-            loss = train_step(x, y, a, optimizer)
-
-            summary['loss']['total'].append(loss)
 
             if step % print_every == 0:
                 print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
@@ -223,13 +218,21 @@ def train(print_every=1, check_every=1000, save_every=5):
 
             if step > 0 and step % check_every == 0:
                 # evaluate the mAP
-                train_mAP, _ = evaluate(model, loader_train, 100)
-                summary['map']['train'].append((step, train_mAP))
-                print('train mAP = {:.1f}'.format(100 * train_mAP), end=', ')
 
-                test_mAP, _ = evaluate(model, loader_test, 100)
+                # Keep quite
+                voc_train.mute = True
+                voc_test.mute = True
+
+                train_mAP = evaluate(model, loader_train, 100)
+                summary['map']['train'].append((step, train_mAP))
+                print('train mAP = {:.1f}%'.format(100 * train_mAP), end=', ')
+
+                test_mAP = evaluate(model, loader_test, 100)
                 summary['map']['test'].append((step, test_mAP))
-                print('test mAP = {:.1f}'.format(100 * test_mAP))
+                print('test mAP = {:.1f}%'.format(100 * test_mAP))
+
+                voc_train.mute = False
+                voc_test.mute = False
 
                 save_summary()
 
@@ -296,11 +299,6 @@ def train_step(x, y, a, optimizer):
 
 def plot():
     plot_summary(logdir, summary)
-
-
-def test():
-    train_mAP, recall = evaluate(model, loader_train, 100)
-    print('train mAP = {:.1f}'.format(100 * train_mAP))
 
 
 def main():

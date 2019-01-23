@@ -74,8 +74,8 @@ def predict(model, img, info):
         idx = np.where(roi_scores[i] == confidence)[0][0]
         if idx != 0:  # ignore background class
             bbox = roi_coords[:,i,idx]
-            lst.append({'bbox': bbox,
-                        'confidence': confidence,
+            lst.append({'bbox': bbox.detach().cpu().numpy(),
+                        'confidence': confidence.item(),
                         'class_idx': idx})
 
     results = _NMS(lst)
@@ -83,7 +83,7 @@ def predict(model, img, info):
     return results
 
 
-def evaluate(model, loader, total_batches=0, verbose=False):
+def evaluate(model, loader, total_batches=0, verbose=False, show_ap=False):
     """
     Check mAP and recall of a dataset.
     
@@ -95,81 +95,130 @@ def evaluate(model, loader, total_batches=0, verbose=False):
     Returns:
         - mAP: A single number
     """
-    AP = np.zeros((num_classes, 2), dtype=np.int64)
-    num_targets = 0
+    # Lists of (tp, confidence) for each class (idx=class_idx-1)
+    matches = [[] for _ in range(num_classes)]
+    # Number of objects (difficult ones excluded) for each class
+    targets = [0 for _ in range(num_classes)]
+
     num_batches = 0
-    
     model.eval()
     for x, y, a in loader:
         if len(y) == 0:
             continue
-        AP += compute_AP(x, y, a, model, verbose)
-        num_targets += len(y)
-        print('AP:', np.sum(AP[:,0]), '/', np.sum(AP[:,1]))
+        check_image(x, y, a, model, matches, targets, verbose)
 
         num_batches += 1
         if num_batches == total_batches:
             break
-    
-    inds = np.where(AP[:,1] > 0)[0]  # avoid the case that AP[1] == 0
-    mAP = np.mean(AP[inds,0] / AP[inds,1])
-    recall = np.sum(AP[:,0]) / num_targets
+
+    mAP = num = 0
+    for i in range(num_classes):
+        AP = compute_AP(matches[i], targets[i])
+        if np.isnan(AP):
+            continue  # Ignore nonexistent classes
+        if show_ap:
+            print('{}: {:.1f}%'.format(voc_names[i+1], AP*100))
+        mAP += AP
+        num += 1
+    mAP /= num
 
     model.train()
 
-    return mAP, recall
+    return mAP
 
 
-def compute_AP(x, y, a, model, verbose):
+def compute_AP(match, n_pos):
     """
-    Check AP and recall of an image (avoiding memory leak).
+    Check precision of a certain class.
+    Input:
+        - match: List of (tp, confidence)
+        - n_pos: Number of ground-truth objects in this class
+    Returns:
+        - AP: Average precision of this class
     """
-    results = predict(model, x, a)
+    if n_pos == 0:
+        return float('nan')
+
+    # Sort again for all detection
+    match.sort(key=lambda x: x[1], reverse=True)
+
+    # Compute precision / recall
+    TP = np.array([m[0] for m in match])
+    FP = 1-TP
+    TP = np.cumsum(TP)
+    FP = np.cumsum(FP)
+    recall = TP / n_pos
+    precision = TP / (TP+FP)
+
+    # Compute average precision using 11-point interpolation
+    AP = 0
+    for t in np.linspace(0, 1, 11):
+        interp = np.where(recall >= t)[0]
+        p = 0 if len(interp) == 0 \
+            else max(precision[interp])
+        AP += p/11
+
+    return AP
+
+
+def check_image(x, y, a, model, matches, targets, verbose):
+    """
+    Check tp, fp, n_pos on an image for every class,
+    and add the result to `match` and `targets`.
+    """
+    detection = predict(model, x, a)
 
     if verbose:
-        visualize(x, results)
-    
-    return compute_precision(results, y)
+        visualize(x, detection)
+
+    results = assign_detection(detection, y)
+
+    for i in range(num_classes):
+        matches[i] += results[i]
+
+    for object in y:
+        targets[object['class_idx']-1] += 1
 
 
-def compute_precision(lst, targets, threshold=0.5):
+def assign_detection(lst, targets, threshold=0.5):
     """
+    Assign detection to ground-truth of an image if any.
     Compute the TP and TP+FP for an image and every object class.
     It's fine to compute precision directly using the parameterized
     outputs, because they will be scaled in the same way as targets.
 
     Inputs:
         - lst: List of predicted (bounding box, confidence, class index)
-          (already sorted because NMS is done before)
+          (already sorted because _NMS() is done before)
         - targets: Ground-truth of the image
         - threhold: IoU over which can be considered as a TP
     Returns:
-        - ToTF: An ndarray of size Cx2, 2 for (TP, TP+FP)
+        - matches: Lists of (tp, confidence) for every class
     """
-    ToTF = np.zeros((num_classes, 2), dtype=np.int32)
+    matches = [[] for _ in range(num_classes)]
     N = len(targets)
     det = [1]*N  # denoting whether a ground-truth is *unmatched*
     for dic in lst:
         idx = dic['class_idx']
+        confidence = dic['confidence']
         if idx == 0:  # ignore the background class
             continue
-        t = 0
-        flag = False
+        max_iou = -np.inf
+        max_i = None
         for i, target in enumerate(targets):  # search through the gt
             if idx != target['class_idx']:
                 continue
             iou = _IoU(dic['bbox'], target['bbox'])
-            if iou >= threshold and iou > t:
-                if det[i] == 1:
-                    det[i] = 0  # match the ground-truth
-                    t = iou
-                    flag = True  # found a TP!
-        if flag:
-            ToTF[idx-1] += 1
+            if iou > max_iou:
+                max_iou = iou
+                max_i = i
+        if max_iou >= threshold:  # found a TP!
+            if det[max_i] == 1:
+                det[max_i] = 0  # match the ground-truth
+            matches[idx-1].append((1, confidence))
         else:
-            ToTF[idx-1,1] += 1
-
-    return ToTF
+            matches[idx-1].append((0, confidence))
+    return matches
 
 
 def visualize_raw(image, results):
@@ -186,7 +235,6 @@ def visualize(x, results, label=True):
         bbox = result['bbox']
         confidence = result['confidence']
         idx = result['class_idx']
-        bbox = bbox.detach().cpu().numpy()
         color = np.random.uniform(size=3)  # if label else (1, 0, 0)
         plt.gca().add_patch(
             plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
@@ -210,8 +258,8 @@ def init(logdir, test_set):
         from sampler import VOCDetection, data_loader
         from consts import voc_test_data_dir, voc_test_ann_dir
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                                transform=train.transform)
-        loader = data_loader(voc_test, shuffle=True)
+                                transform=train.transform, flip=False)
+        loader = data_loader(voc_test, shuffle=False)
     else:
         loader = train.loader_train
     return train.model, loader
@@ -225,11 +273,11 @@ def main():
                         action='store_true', default=False)
     parser.add_argument('-t', '--test_set',
                         action='store_true', default=False)
+    parser.add_argument('-n', '--num_batches', type=int, default=0)
     args = parser.parse_args()
     model, loader = init(args.logdir, args.test_set)
-    mAP, recall = evaluate(model, loader, 100, args.verbose)
-    print('\nmAP: {:.1f}, recall: {:.1f}'.
-          format(100 * mAP, 100 * recall))
+    mAP = evaluate(model, loader, args.num_batches, args.verbose, True)
+    print('\nmAP: {:.1f}%'.format(100 * mAP))
 
 
 if __name__ == '__main__':
