@@ -12,11 +12,11 @@ import os
 import argparse
 from time import time
 
-from sampler import VOCDetection, data_loader
+from sampler import VOCDetection, data_loader, batch_data_loader
 from consts import voc_test_data_dir, voc_test_ann_dir
-from consts import transform, voc_names
+from consts import transform, voc_names, low_memory
 import train
-from test import predict
+from test import predict, predict_batch
 from utility import results_to_raw, process_bar
 
 
@@ -26,8 +26,11 @@ parser.add_argument(
     '--savedir', type=str,
     default='/home/user/workspace/VOCdevkit/VOCcode/results/VOC2007/Main'
 )
+parser.add_argument('-b', '--use_batch',
+                    action='store_true', default=False)
 args = parser.parse_args()
 savedir = args.savedir
+use_batch = args.use_batch
 
 files = {}
 
@@ -59,7 +62,10 @@ def main():
     voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                             transform=transform, flip=False)
     voc_test.mute = True
-    loader_test = data_loader(voc_test, shuffle=False)
+    if use_batch:
+        loader_test = batch_data_loader(voc_test, 8 if low_memory else 32)
+    else:
+        loader_test = data_loader(voc_test, shuffle=False)
 
     train.logdir = args.logdir
     train.init()
@@ -82,15 +88,27 @@ def main():
     
     tic = time()
 
-    for i, (x, _, a) in enumerate(loader_test):
-        results = predict(model, x, a)
-        results_to_raw(results, a['scale'], *a['shape'])
-        process_bar(time()-tic, i+1, len(loader_test))
-        for result in results:
-            append_result(a['image_id'], result['class_idx'],
-                          result['bbox'], result['confidence'])
+    if use_batch:
+        num_batches = 0
+        for img, _, info in loader_test:
+            detection = predict_batch(model, img, info)
+            num_batches += len(detection)
+            process_bar(time()-tic, num_batches, len(loader_test))
+            for results, a in zip(detection, info):
+                results_to_raw(results, a['scale'], *a['shape'])
+                for result in results:
+                    append_result(a['image_id'], result['class_idx'],
+                                  result['bbox'], result['confidence'])
+    else:
+        for i, (x, _, a) in enumerate(loader_test):
+            results = predict(model, x, a)
+            results_to_raw(results, a['scale'], *a['shape'])
+            process_bar(time()-tic, i+1, len(loader_test))
+            for result in results:
+                append_result(a['image_id'], result['class_idx'],
+                              result['bbox'], result['confidence'])
 
-    print('Use time: {}s'.format(time()-tic))
+    print('\nUsed time: {:.2f}s'.format(time()-tic))
 
     # %% The end
 
