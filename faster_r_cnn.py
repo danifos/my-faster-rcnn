@@ -125,7 +125,7 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, params, old_ver=False):
+    def __init__(self, params, old_ver=True):
         """
         Inputs:
             - params: Dictionary of {component : filename} to load state dict
@@ -194,54 +194,64 @@ class FasterRCNN(nn.Module):
         # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
         RPN_cls, RPN_reg = self.RPN(features)
 
-        # Create about 2000 region proposals / 300 top-ranked proposals at test time
-        proposals = create_proposals(RPN_cls, RPN_reg,
-                                     x, a['scale'][0], training=training)
-
+        # Different for training and testing
         if training:
-            # Sample 256 anchors
-            anchor_samples, labels, nas = sample_anchors(x, y)
-            # Compute RPN loss
-            rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
-
-            # Sample 128 proposals
-            proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
-            # Get Nx81 classification scores
-            # and Nx324 regression coordinates of Fast R-CNN
-            RCNN_cls, RCNN_reg = self.RCNN(features, x, proposal_samples)
-            # Compute RoI loss, has in-place error if do not use detach()
-            roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
-
-            loss = rpn_loss + roi_loss
-            summary = {'anchor_samples': nas,
-                       'proposal_samples': nps,
-                       'losses': {'rpn_cls': rpn_cls, 'rpn_reg': rpn_reg,
-                                  'roi_cls': roi_cls, 'roi_reg': roi_reg}}
-            return loss, summary
-
+            return self.train_RCNN(x, y, a, features, RPN_cls, RPN_reg)
         else:
-            RCNN_cls, RCNN_reg = self.RCNN(features, x, proposals.t())
-            N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
-            roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
-            roi_coords = RCNN_reg.view(N, M, 4).permute(2, 0, 1)
-            roi_coords = roi_coords * bbox_normalize_stds.view(4, 1, 1) \
-                         + bbox_normalize_means.view(4, 1, 1)
-            proposals = proposals.unsqueeze(2).expand_as(roi_coords)
-            roi_coords = inv_parameterize(roi_coords, proposals)
+            return self.test_RCNN(x, a, features, RPN_cls, RPN_reg)
 
-            roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
-            lst = []  # list of predicted dict {bbox, confidence, class_idx}
-            for i in range(N):
-                confidence = torch.max(roi_scores[i])
-                idx = np.where(roi_scores[i] == confidence)[0][0]
-                if idx != 0:  # ignore background class
-                    bbox = roi_coords[:, i, idx]
-                    lst.append({'bbox': bbox.detach().cpu().numpy(),
-                                'confidence': confidence.item(),
-                                'class_idx': idx})
+    def train_RCNN(self, x, y, a, features, RPN_cls, RPN_reg):
+        # Create about 2000 region proposals
+        proposals = create_proposals(RPN_cls, RPN_reg,
+                                     x, a['scale'][0], training=True)
 
-            results = _NMS(lst)
-            return results
+        # Sample 256 anchors
+        anchor_samples, labels, nas = sample_anchors(x, y)
+        # Compute RPN loss
+        rpn_loss, (rpn_cls, rpn_reg) = RPN_loss(RPN_cls, labels, RPN_reg, anchor_samples)
+
+        # Sample 128 proposals
+        proposal_samples, gt_coords, gt_labels, nps = sample_proposals(proposals, y)
+        # Get Nx81 classification scores
+        # and Nx324 regression coordinates of Fast R-CNN
+        RCNN_cls, RCNN_reg = self.RCNN(features, x, proposal_samples)
+        # Compute RoI loss, has in-place error if do not use detach()
+        roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
+
+        loss = rpn_loss + roi_loss
+        summary = {'anchor_samples': nas,
+                   'proposal_samples': nps,
+                   'losses': {'rpn_cls': rpn_cls, 'rpn_reg': rpn_reg,
+                              'roi_cls': roi_cls, 'roi_reg': roi_reg}}
+        return loss, summary
+
+    def test_RCNN(self, x, a, features, RPN_cls, RPN_reg):
+        # 300 top-ranked proposals at test time
+        proposals = create_proposals(RPN_cls, RPN_reg,
+                                     x, a['scale'][0], training=False)
+
+        RCNN_cls, RCNN_reg = self.RCNN(features, x, proposals.t())
+        N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
+        roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
+        roi_coords = RCNN_reg.view(N, M, 4).permute(2, 0, 1)
+        roi_coords = roi_coords * bbox_normalize_stds.view(4, 1, 1) \
+                     + bbox_normalize_means.view(4, 1, 1)
+        proposals = proposals.unsqueeze(2).expand_as(roi_coords)
+        roi_coords = inv_parameterize(roi_coords, proposals)
+
+        roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
+        lst = []  # list of predicted dict {bbox, confidence, class_idx}
+        for i in range(N):
+            confidence = torch.max(roi_scores[i])
+            idx = np.where(roi_scores[i] == confidence)[0][0]
+            if idx != 0:  # ignore background class
+                bbox = roi_coords[:, i, idx]
+                lst.append({'bbox': bbox.detach().cpu().numpy(),
+                            'confidence': confidence.item(),
+                            'class_idx': idx})
+
+        results = _NMS(lst)
+        return results
 
     def get_optimizer(self, learning_rate, weight_decay):
         params = []

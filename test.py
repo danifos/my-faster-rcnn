@@ -53,6 +53,7 @@ def predict_raw(model, image, visualize=True):
         x.to(dtype=dtype, device=device)
 
         image = T.ToTensor()(image).numpy()
+        # FIXME: image may not be able to show
 
     elif isinstance(image, np.ndarray):
         image = image[..., ::-1]
@@ -60,6 +61,7 @@ def predict_raw(model, image, visualize=True):
         w, h = scale_image(width, height)
         x = cv.resize(image, (w, h), cv.INTER_CUBIC)
         x = Tensor(x).transpose((2, 0, 1))
+        # FIXME: x need an extra dim to feed in CNN
         x = (x - imagenet_norm['mean']) / imagenet_norm['std']
 
     else:
@@ -96,8 +98,32 @@ def predict(model, img, info):
     return results
 
 
+def predict_batch(model, img, info):
+    """
+    Predict bounding boxes on a batch of images.
+
+    Inputs:
+        - model: Faster R-CNN model
+        - img: Input images, size (Nx3xhxw)
+        - info: List of info
+    Returns:
+        - results: List of Lists of dicts
+    """
+    x = img.to(device=device, dtype=dtype)
+    features = model.CNN(x)
+    results = []
+    for feature, a in zip(features, info):
+        feature = feature.unsqueeze(0)
+        RPN_cls, RPN_reg = model.RPN(feature)
+        result = model.test_RCNN(x, a,
+                                 feature, RPN_cls, RPN_reg)
+        results.append(result)
+
+    return results
+
+
 def evaluate(model, loader, total_batches=0, check_every=0,
-             verbose=False, show_ap=False):
+             verbose=False, show_ap=False, use_batch=False):
     """
     Check mAP of a dataset.
     
@@ -119,16 +145,20 @@ def evaluate(model, loader, total_batches=0, check_every=0,
     for x, y, a in loader:
         if len(y) == 0:
             continue
-        check_image(x, y, a, model, matches, targets, verbose)
+        if use_batch:
+            check_image_batch(x, y, a, model, matches, targets)
+        else:
+            check_image(x, y, a, model, matches, targets, verbose)
 
-        num_batches += 1
+        num_batches += len(y) if use_batch else 1
         process_bar(time()-tic, num_batches, total_iters)
-        if check_every and (num_batches+1) % check_every == 0:
+        if check_every and not use_batch and \
+                (num_batches+1) % check_every == 0:
             mAP = compute_mAP(matches, targets, show_ap)
-            print('\nmAP: {:.1f}'.format(mAP * 100))
+            print('\nmAP: {:.1f}%'.format(mAP * 100))
         if num_batches == total_batches:
             break
-    print()
+    print('\nUsed time: {:.2f}s'.format(time()-tic))
 
     model.train()
 
@@ -212,6 +242,17 @@ def check_image(x, y, a, model, matches, targets, verbose):
         targets[object['class_idx']-1] += 1
 
 
+def check_image_batch(x, y, a, model, matches, targets):
+    detection = predict_batch(model, x, a)
+
+    for D, Y in zip(detection, y):
+        results = assign_detection(D, Y)
+        for i in range(num_classes):
+            matches[i] += results[i]
+        for object in Y:
+            targets[object['class_idx'] - 1] += 1
+
+
 def assign_detection(lst, targets, threshold=0.5):
     """
     Assign detection to ground-truth of an image if any.
@@ -253,6 +294,8 @@ def assign_detection(lst, targets, threshold=0.5):
     return matches
 
 
+# %% Visualization of the bounding boxes
+
 def visualize_raw(image, results, label=True):
     plt.imshow(image)
     for result in results:
@@ -280,18 +323,22 @@ def visualize(x, results, label=True):
 
 # %% Main
 
-def init(logdir, test_set):
+def init(logdir, test_set, use_batch):
     import train
     train.logdir = logdir
     train.init()
-    loader = None
     if test_set:
-        from sampler import VOCDetection, data_loader
+        from sampler import VOCDetection, data_loader, batch_data_loader
         from consts import voc_test_data_dir, voc_test_ann_dir, transform
+        from consts import low_memory
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                                 transform=transform, flip=False)
         voc_test.mute = True
-        loader = data_loader(voc_test, shuffle=False)
+        if use_batch:
+            batch_size = 8 if low_memory else 32
+            loader = batch_data_loader(voc_test, batch_size=batch_size)
+        else:
+            loader = data_loader(voc_test, shuffle=False)
     else:
         train.voc_train.mute = True
         loader = train.loader_train
@@ -306,12 +353,16 @@ def main():
                         action='store_true', default=False)
     parser.add_argument('-t', '--test_set',
                         action='store_true', default=False)
+    parser.add_argument('-b', '--use_batch',
+                        action='store_true', default=False)
     parser.add_argument('-n', '--num_batches', type=int, default=0)
     parser.add_argument('-c', '--check_every', type=int, default=0)
     args = parser.parse_args()
-    model, loader = init(args.logdir, args.test_set)
+    assert args.test_set or not args.use_batch, \
+        "batch sampling on test set is not supported"
+    model, loader = init(args.logdir, args.test_set, args.use_batch)
     mAP = evaluate(model, loader, args.num_batches, args.check_every,
-                   args.verbose, True)
+                   args.verbose, True, args.use_batch)
     print('\nmAP: {:.1f}%'.format(100 * mAP))
 
 

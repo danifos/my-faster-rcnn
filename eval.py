@@ -6,7 +6,7 @@ Created on Wed Nov 21 22:18:24 2018
 @author: Ruijie Ni
 """
 
-# %% Evaluation on Pascal VOC 2007, using others pre-trained model
+# %% Evaluation on Pascal VOC 2007, using VOCdevkit
 
 import os
 import argparse

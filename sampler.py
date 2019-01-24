@@ -165,7 +165,7 @@ class VOCDetection(Dataset):
         return len(self.images)
 
 
-# %% My DataLoader
+# %% My data loaders
 
 def collate(batch):
     x, y, a = batch[0]
@@ -179,6 +179,54 @@ def data_loader(dataset, shuffle=True, num_workers=8):
                           collate_fn=collate)
     return DataLoader(dataset, batch_size=1, shuffle=shuffle,
                       collate_fn=collate, num_workers=num_workers)
+
+
+# The following data loader may be helpful in evaluation
+
+def collate_batch(batch):
+    x, y, a = zip(*list(batch))  # unzip
+    x = torch.stack(x, dim=0)
+
+    return x, y, a
+
+
+class BatchDataLoader:
+    def __init__(self, dataset, batch_size,
+                 index_file='index.pkl'):
+        import pickle
+        self.dataset = dataset
+        self.num_images = len(self.dataset)
+        self.batch_size = batch_size
+        with open(index_file, 'rb') as fi:
+            self.index_dic = pickle.load(fi)
+        self.image_shapes = list(self.index_dic.keys())
+        self.collate_fn = collate_batch
+
+        self.shape_idx = 0
+        self.batch_idx = 0
+
+    def __len__(self):
+        return self.num_images
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.shape_idx == len(self.image_shapes):
+            raise StopIteration()
+
+        lst = self.index_dic[self.image_shapes[self.shape_idx]]
+        indices = lst[self.batch_idx : self.batch_idx+self.batch_size]
+        self.batch_idx += self.batch_size
+        if self.batch_idx >= len(lst):
+            self.shape_idx += 1
+            self.batch_idx = 0
+
+        return self.collate_fn(self.dataset[i] for i in indices)
+
+
+def batch_data_loader(dataset, batch_size=8):
+    return BatchDataLoader(dataset, batch_size)
 
 
 # %% Transformation of images and targets for both dataset
