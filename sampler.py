@@ -373,7 +373,7 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     if len(inds_n) > num_n:
         labels[inds_n] = -1
         labels[np.random.choice(inds_n, num_n, replace=False)] = 0
-    print('{} / {} anchors samples'.format(num_t-num_n, num_n))
+    # print('{} / {} anchors samples'.format(num_t-num_n, num_n))
 
     samples = parameterize(bboxes[:, argmax_IoUs], anchors)
 
@@ -515,7 +515,7 @@ def sample_proposals(proposals, targets, num_samples=128):
     gt_coords = (gt_coords - bbox_normalize_means.view(1,4)) \
                            / bbox_normalize_stds.view(1,4)
 
-    print('{} / {} proposal samples'.
-          format(min(len(inds_fg), num_fg_total), min(len(inds_bg), num_bg_total)))
+    # print('{} / {} proposal samples'.
+    #       format(min(len(inds_fg), num_fg_total), min(len(inds_bg), num_bg_total)))
     
     return samples, gt_coords, gt_labels, num_fg_total

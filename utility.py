@@ -311,8 +311,8 @@ def RPN_loss(p, p_s, t, t_s, sigma=3):
 
     _cls_loss = cls_loss.detach().cpu().numpy()
     _reg_loss = reg_loss.detach().cpu().numpy()
-    print('RPN cls loss: {:.2f}, RPN reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
-    
+    # print('RPN cls loss: {:.2f}, RPN reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
+
     return loss, (_cls_loss, _reg_loss)
 
 
@@ -342,8 +342,8 @@ def RoI_loss(p, u, t, v, sigma=1):
 
     _cls_loss = cls_loss.detach().cpu().numpy()
     _reg_loss = reg_loss.detach().cpu().numpy()
-    print('RoI cls loss: {:.2f}, RoI reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
-    
+    # print('RoI cls loss: {:.2f}, RoI reg loss: {:.3f}'.format(_cls_loss, _reg_loss))
+
     return loss, (_cls_loss, _reg_loss)
 
 
@@ -410,7 +410,7 @@ def inv_parameterize(t, anchor, dtype=None):
     return bbox
 
 
-# %% Other
+# %% Terminal display
 
 def process_bar(t, num, total):
     eta = int((t) / num * (total - num))
@@ -421,3 +421,25 @@ def process_bar(t, num, total):
     len_token = int(width * num / total)
     tokens = '>' * len_token + ' ' * (width - len_token)
     print('\r' + prefix + tokens + suffix, end='')
+
+
+def pretty_head():
+    head = '| tot time | time |    lr   | epoch |  step |  image | nas | nps |' \
+           ' rpn cls | roi cls | rpn reg | roi reg |  loss  | train map | test map |'
+    print(''.join('=' if head[i] != '|' else '+' for i in range(len(head))))
+    print(head)
+    print(''.join('-' if head[i] != '|' else '+' for i in range(len(head))))
+
+
+def pretty_body(summary, start, iter_time, lr, epoch, step, image_id, train_map, test_map):
+    tot_time = int(time() - start)
+    h, m, s = tot_time // 3600, tot_time // 60 % 60, tot_time % 60
+    losses = summary['loss']['single'][-1]
+    print('\r| {:02d}:{:02d}:{:02d} | {:.2f} | {:.1e} |   {:2d}  | {:5d} |'
+          ' {:6s} | {:3d} |  {:2d} |   {:.2f}  |   {:.2f}  |  {:.3f}  |'
+          '  {:.3f}  | {:.4f} |   {:4.1f}%   |   {:4.1f}%  |'.
+          format(h, m, s, iter_time, lr, epoch+1, step, image_id,
+                 summary['samples']['rpn'][-1], summary['samples']['roi'][-1],
+                 losses['rpn_cls'], losses['roi_cls'],
+                 losses['rpn_reg'], losses['roi_reg'],
+                 summary['loss']['total'][-1], train_map*100, test_map*100), end='')

@@ -22,6 +22,7 @@ from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc
 from consts import transform
 from test import evaluate
 from plot import plot_summary
+from utility import pretty_head, pretty_body
 
 
 # %% Basic settings
@@ -37,6 +38,7 @@ logdir = ''
 model: FasterRCNN = None
 epoch = step = None
 summary = None
+pretty = False
 
 
 # %% COCO dataset
@@ -172,6 +174,9 @@ def save(*args):
     save_summary()
     save_model(*args)
 
+    if not pretty:
+        print('Saved summary, model and optimizer')
+
 
 # %% Training procedure
 
@@ -182,35 +187,38 @@ def get_optimizer():
 
 def lr_decay(decay=10):
     global learning_rate
-    print('Learning rate: {:.1e} -> {:.1e}'.
-          format(learning_rate, learning_rate / decay))
+    if not pretty:
+        print('Learning rate: {:.1e} -> {:.1e}'.
+              format(learning_rate, learning_rate / decay))
     learning_rate /= decay
     return model.lr_decay(decay) if model else None
 
 
-def train(print_every=1, check_every=0, save_every=5):
+def train(check_every=0, save_every=5):
     global model, epoch, step
 
     optimizer = get_optimizer()
     model.train()
-    tic = time()
+    start = tic = time()
+
+    train_mAP = test_mAP = 0.
+    if pretty:
+        pretty_head()
 
     for e in range(epoch, num_epochs):
-        print('- Epoch {}'.format(e))
+        if not pretty:
+            print('- Epoch {}'.format(e))
 
-        for x, y, a in loader_train:  # an image and its targets
-            if len(y) == 0: continue  # no target in this image
+        for x, y, a in loader_train:
+            if len(y) == 0:
+                continue  # no target in this image
 
             loss = train_step(x, y, a, optimizer)
             summary['loss']['total'].append(loss)
 
             toc = time()
-            print('Use time: {:.2f}s'.format(toc-tic))
+            iter_time = toc-tic
             tic = toc
-
-            if step % print_every == 0:
-                print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
-                    it=step, loss=loss))
 
             if check_every and step > 0 and step % check_every == 0:
                 # evaluate the mAP
@@ -219,27 +227,34 @@ def train(print_every=1, check_every=0, save_every=5):
                 voc_train.mute = True
                 voc_test.mute = True
 
+                print('\nChecking mAP ...')
                 train_mAP = evaluate(model, loader_val, 200)
                 summary['map']['train'].append((step, train_mAP))
                 print('train mAP = {:.1f}%'.format(100 * train_mAP))
-
                 test_mAP = evaluate(model, loader_test, 200)
                 summary['map']['test'].append((step, test_mAP))
                 print('test mAP = {:.1f}%'.format(100 * test_mAP))
+                if pretty:
+                    pretty_head()
 
-                voc_train.mute = False
-                voc_test.mute = False
+                voc_train.mute = pretty
+                voc_test.mute = pretty
 
                 save(e, step)
 
             step += 1
 
+            if pretty:
+                pretty_body(summary, start, iter_time, learning_rate,
+                            e, step, a['image_id'], train_mAP, test_mAP)
+            else:
+                print('Use time: {:.2f}s'.format(iter_time))
+                print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
+                    it=step, loss=loss))
+
         # save model
         if (e+1) % save_every == 0:
             save(e, step)
-            sleep_time = 0
-            print('Next epoch will start {:d}s later'.format(sleep_time))
-            sleep(sleep_time)
 
         if e+1 in decay_epochs:
             save(e, step)
@@ -271,7 +286,7 @@ def plot():
 
 def main():
     import argparse
-    global logdir, num_epochs, decay_epochs
+    global logdir, num_epochs, decay_epochs, pretty
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--logdir', type=str, default='result')
@@ -279,6 +294,7 @@ def main():
     parser.add_argument('-s', '--save_every', type=int, default=5)
     parser.add_argument('-e', '--epochs', type=int, default=num_epochs)
     parser.add_argument('-d', '--decay_epochs', type=str, default='12')
+    parser.add_argument('-p', '--pretty', action='store_true', default=False)
 
     args = parser.parse_args()
     logdir = args.logdir
@@ -286,6 +302,8 @@ def main():
     decay_epochs = eval(args.decay_epochs)
     if type(decay_epochs) == int:
         decay_epochs = [decay_epochs]
+    pretty = args.pretty
+    voc_train.mute = pretty
 
     init()
     train(check_every=args.check_every, save_every=args.save_every)

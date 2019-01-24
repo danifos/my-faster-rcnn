@@ -158,7 +158,6 @@ def evaluate(model, loader, total_batches=0, check_every=0,
             print('\nmAP: {:.1f}%'.format(mAP * 100))
         if num_batches == total_batches:
             break
-    print('\nUsed time: {:.2f}s'.format(time()-tic))
 
     model.train()
 
@@ -361,8 +360,11 @@ def main():
     assert args.test_set or not args.use_batch, \
         "batch sampling on test set is not supported"
     model, loader = init(args.logdir, args.test_set, args.use_batch)
+
+    tic = time()
     mAP = evaluate(model, loader, args.num_batches, args.check_every,
                    args.verbose, True, args.use_batch)
+    print('\nUsed time: {:.2f}s'.format(time()-tic))
     print('\nmAP: {:.1f}%'.format(100 * mAP))
 
 
