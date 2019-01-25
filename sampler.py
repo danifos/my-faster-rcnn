@@ -73,8 +73,9 @@ class CocoDetection(Dataset):
 
 class XMLHandler(xml.sax.ContentHandler):
     
-    def __init__(self, targets):
+    def __init__(self, targets, no_diff):
         self.targets = targets
+        self.no_diff = no_diff
         self.cur = ''
         self.depth = 0
 
@@ -94,7 +95,7 @@ class XMLHandler(xml.sax.ContentHandler):
     def endElement(self, tag):
         self.depth -= 1
 
-        if tag == 'bndbox' and self.depth == 2:
+        if self.no_diff and tag == 'bndbox' and self.depth == 2:
             if self.targets[-1]['difficult'] == 1:
                 self.targets.pop()
 
@@ -118,11 +119,12 @@ class VOCDetection(Dataset):
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
         
-    def __init__(self, root, ann, transform=None, flip=True, subset=0):
+    def __init__(self, root, ann, transform=None, flip=True, no_diff=True, subset=0):
         self.root = root
         self.ann = ann
         self.transform = transform
         self.flip = flip
+        self.no_diff = no_diff
         self.mute = False
         
         self.images = os.listdir(root)
@@ -149,7 +151,7 @@ class VOCDetection(Dataset):
         pre, _ = os.path.splitext(path)
 
         targets = []
-        self.parser.setContentHandler(XMLHandler(targets))
+        self.parser.setContentHandler(XMLHandler(targets, self.no_diff))
         self.parser.parse(os.path.join(self.ann, pre+'.xml'))
         if not self.mute:
             print(pre, targets)

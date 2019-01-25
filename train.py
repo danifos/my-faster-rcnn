@@ -11,7 +11,7 @@ Created on Tue Oct 16 23:47:16 2018
 # %% The imports
 
 import pickle
-from time import time, sleep
+from time import time
 import os
 
 from sampler import CocoDetection, VOCDetection, data_loader
@@ -22,7 +22,7 @@ from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc
 from consts import transform
 from test import evaluate
 from plot import plot_summary
-from utility import pretty_head, pretty_body
+from utility import pretty_head, pretty_body, pretty_tail
 
 
 # %% Basic settings
@@ -170,9 +170,9 @@ def save_summary():
     file.close()
 
 
-def save(*args):
+def save():
     save_summary()
-    save_model(*args)
+    save_model(epoch, step)
 
     if not pretty:
         print('Saved summary, model and optimizer')
@@ -202,6 +202,9 @@ def train(check_every=0, save_every=5):
     start = tic = time()
 
     train_mAP = test_mAP = 0.
+    if summary['map']['train']:
+        train_mAP = summary['map']['train'][-1][1]
+        test_mAP = summary['map']['test'][-1][1]
     if pretty:
         pretty_head()
 
@@ -214,7 +217,6 @@ def train(check_every=0, save_every=5):
                 continue  # no target in this image
 
             loss = train_step(x, y, a, optimizer)
-            summary['loss']['total'].append(loss)
 
             toc = time()
             iter_time = toc-tic
@@ -227,39 +229,44 @@ def train(check_every=0, save_every=5):
                 voc_train.mute = True
                 voc_test.mute = True
 
-                print('\nChecking mAP ...')
+                if pretty:
+                    pretty_tail()
+                    print('Checking mAP ...')
                 train_mAP = evaluate(model, loader_val, 200)
                 summary['map']['train'].append((step, train_mAP))
-                print('train mAP = {:.1f}%'.format(100 * train_mAP))
                 test_mAP = evaluate(model, loader_test, 200)
                 summary['map']['test'].append((step, test_mAP))
-                print('test mAP = {:.1f}%'.format(100 * test_mAP))
                 if pretty:
                     pretty_head()
+                else:
+                    print('train mAP = {:.1f}%'.format(100 * train_mAP))
+                    print('test mAP = {:.1f}%'.format(100 * test_mAP))
 
                 voc_train.mute = pretty
                 voc_test.mute = pretty
-
-                save(e, step)
 
             step += 1
 
             if pretty:
                 pretty_body(summary, start, iter_time, learning_rate,
-                            e, step, a['image_id'], train_mAP, test_mAP)
+                            epoch, step, a['image_id'], train_mAP, test_mAP)
             else:
                 print('Use time: {:.2f}s'.format(iter_time))
                 print('-- Iteration {it}, loss = {loss:.4f}\n'.format(
                     it=step, loss=loss))
 
-        # save model
-        if (e+1) % save_every == 0:
-            save(e, step)
+        epoch += 1
 
-        if e+1 in decay_epochs:
-            save(e, step)
-            epoch = e+1
+        # save model
+        if epoch % save_every == 0:
+            save()
+
+        if epoch in decay_epochs:
+            save()
             optimizer = lr_decay()
+
+    if pretty:
+        pretty_tail()
 
 
 def train_step(x, y, a, optimizer):
@@ -270,12 +277,14 @@ def train_step(x, y, a, optimizer):
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    loss = loss.item()
 
     summary['samples']['rpn'].append(ret['anchor_samples'])
     summary['samples']['roi'].append(ret['proposal_samples'])
     summary['loss']['single'].append(ret['losses'])
+    summary['loss']['total'].append(loss)
 
-    return loss.item()
+    return loss
 
 
 # %% Main
@@ -307,7 +316,7 @@ def main():
 
     init()
     train(check_every=args.check_every, save_every=args.save_every)
-    save(epoch, step)
+    save()
 
 
 if __name__ == '__main__':

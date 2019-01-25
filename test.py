@@ -160,6 +160,7 @@ def evaluate(model, loader, total_batches=0, check_every=0,
             break
 
     model.train()
+    print()
 
     return compute_mAP(matches, targets, show_ap)
 
@@ -285,9 +286,12 @@ def assign_detection(lst, targets, threshold=0.5):
                 max_iou = iou
                 max_i = i
         if max_iou >= threshold:  # found a TP!
-            if det[max_i] == 1:
-                det[max_i] = 0  # match the ground-truth
-            matches[idx-1].append((1, confidence))
+            if not targets['difficult']:
+                if det[max_i] == 1:
+                    det[max_i] = 0  # match the ground-truth
+                    matches[idx-1].append((1, confidence))
+                else:
+                    matches[idx - 1].append((0, confidence))
         else:
             matches[idx-1].append((0, confidence))
     return matches
@@ -331,7 +335,7 @@ def init(logdir, test_set, use_batch):
         from consts import voc_test_data_dir, voc_test_ann_dir, transform
         from consts import low_memory
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                                transform=transform, flip=False)
+                                transform=transform, flip=False, no_diff=False)
         voc_test.mute = True
         if use_batch:
             batch_size = 8 if low_memory else 32

@@ -443,3 +443,10 @@ def pretty_body(summary, start, iter_time, lr, epoch, step, image_id, train_map,
                  losses['rpn_cls'], losses['roi_cls'],
                  losses['rpn_reg'], losses['roi_reg'],
                  summary['loss']['total'][-1], train_map*100, test_map*100), end='')
+
+
+def pretty_tail():
+    head = '| tot time | time |    lr   | epoch |  step |  image | nas | nps |' \
+           ' rpn cls | roi cls | rpn reg | roi reg |  loss  | train map | test map |'
+    print()
+    print(''.join('-' if head[i] != '|' else '+' for i in range(len(head))))

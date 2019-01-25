@@ -125,7 +125,7 @@ class FastRCNN(nn.Module):
 # %% Faster-R-CNN
 
 class FasterRCNN(nn.Module):
-    def __init__(self, params, old_ver=False):
+    def __init__(self, params):
         """
         Inputs:
             - params: Dictionary of {component : filename} to load state dict
@@ -152,12 +152,13 @@ class FasterRCNN(nn.Module):
         if params:
             # Load parameters
             state_dict = torch.load(params)
-            if old_ver:
-                self.load_state_dict(state_dict)
-            else:
+            if 'optimizer' in state_dict:
                 self.load_state_dict(state_dict['model'])
                 self.load_optimizer = state_dict['optimizer']
-            print('Loaded pre-trained model and optimizer')
+                print('Loaded pre-trained model and optimizer')
+            else:
+                self.load_state_dict(state_dict)
+                print('Warning: Loaded pre-trained model, no optimizer')
         else:
             # And randomize the parameters otherwise
             for child in (self.RPN, self.RCNN):
