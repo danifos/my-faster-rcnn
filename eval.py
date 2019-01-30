@@ -70,6 +70,7 @@ def main():
     train.logdir = args.logdir
     train.init()
     model = train.model
+    model.eval()
 
     try:
         os.mkdir(savedir)

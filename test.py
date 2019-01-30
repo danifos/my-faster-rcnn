@@ -205,8 +205,8 @@ def compute_AP(match, n_pos):
     match.sort(key=lambda x: x[1], reverse=True)
 
     # Compute precision / recall
-    TP = np.array([m[0] for m in match])
-    FP = 1-TP
+    TP = np.array([1 if m[0] == 1 else 0 for m in match])
+    FP = np.array([1 if m[0] == 0 else 0 for m in match])
     TP = np.cumsum(TP)
     FP = np.cumsum(FP)
     recall = TP / n_pos
@@ -238,8 +238,9 @@ def check_image(x, y, a, model, matches, targets, verbose):
     for i in range(num_classes):
         matches[i] += results[i]
 
-    for object in y:
-        targets[object['class_idx']-1] += 1
+    for obj in y:
+        if not obj['difficult']:
+            targets[obj['class_idx']-1] += 1
 
 
 def check_image_batch(x, y, a, model, matches, targets):
@@ -249,8 +250,9 @@ def check_image_batch(x, y, a, model, matches, targets):
         results = assign_detection(D, Y)
         for i in range(num_classes):
             matches[i] += results[i]
-        for object in Y:
-            targets[object['class_idx'] - 1] += 1
+        for obj in Y:
+            if not obj['difficult']:
+                targets[obj['class_idx'] - 1] += 1
 
 
 def assign_detection(lst, targets, threshold=0.5):
@@ -274,8 +276,6 @@ def assign_detection(lst, targets, threshold=0.5):
     for dic in lst:
         idx = dic['class_idx']
         confidence = dic['confidence']
-        if idx == 0:  # ignore the background class
-            continue
         max_iou = -np.inf
         max_i = None
         for i, target in enumerate(targets):  # search through the gt
@@ -286,14 +286,16 @@ def assign_detection(lst, targets, threshold=0.5):
                 max_iou = iou
                 max_i = i
         if max_iou >= threshold:  # found a TP!
-            if not targets['difficult']:
+            if not targets[max_i]['difficult']:
                 if det[max_i] == 1:
                     det[max_i] = 0  # match the ground-truth
-                    matches[idx-1].append((1, confidence))
+                    matches[idx-1].append((1, confidence))  # TP
                 else:
-                    matches[idx - 1].append((0, confidence))
+                    matches[idx-1].append((0, confidence))  # FP
+            else:
+                matches[idx-1].append((-1, confidence))  # don't care
         else:
-            matches[idx-1].append((0, confidence))
+            matches[idx-1].append((0, confidence))  # FP
     return matches
 
 
