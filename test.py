@@ -7,7 +7,6 @@ Created on Tue Nov  6 11:30:00 2018
 """
 
 from time import time
-import os
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -17,7 +16,7 @@ from consts import dtype, device, voc_names
 from consts import imagenet_norm
 
 
-def predict_raw(model, image, visualize=True):
+def predict_raw(model, image):
     """
     Predict the object in a raw image.
 
@@ -29,6 +28,7 @@ def predict_raw(model, image, visualize=True):
           - Numpy array (read by opencv)
           - [Tensor is supported by predict()]
     Returns:
+        - image: Numpy array for imshow
         - results: Dict of
             - bbox: (x(left), y(top), x(right), y(bottom))
             - confidence
@@ -49,32 +49,28 @@ def predict_raw(model, image, visualize=True):
         width, height = image.width, image.height
         w, h = scale_image(width, height)
         x = T.Resize((h, w))(image)
-        x = transform(x)
-        x.to(dtype=dtype, device=device)
-
-        image = T.ToTensor()(image).numpy()
-        # FIXME: image may not be able to show
+        x = transform(x).unsqueeze(0)
+        x = x.to(dtype=dtype, device=device)
+        image = T.ToTensor()(image).numpy().transpose((1, 2, 0))
 
     elif isinstance(image, np.ndarray):
         image = image[..., ::-1]
         width, height = image.shape[1], image.shape[0]
         w, h = scale_image(width, height)
         x = cv.resize(image, (w, h), cv.INTER_CUBIC)
-        x = Tensor(x).transpose((2, 0, 1))
-        # FIXME: x need an extra dim to feed in CNN
-        x = (x - imagenet_norm['mean']) / imagenet_norm['std']
+        mean = np.array(imagenet_norm['mean'])
+        std = np.array(imagenet_norm['std'])
+        x = ((x/255 - mean) / std).transpose((2, 0, 1))
+        x = Tensor(x).unsqueeze(0)
 
     else:
         assert False, "Unsupported type"
 
-    results = model({'scale': (w, h)}, x)
-    results = results_to_raw(results, (w/width, h/height),
-                             width, height)
+    scale = (w/width, h/height)
+    results = model({'scale': scale}, x)
+    results_to_raw(results, scale, width, height)
 
-    if visualize:
-        visualize_raw(image, results)
-
-    return results
+    return image, results
 
 
 def predict(model, img, info):
@@ -301,29 +297,41 @@ def assign_detection(lst, targets, threshold=0.5):
 
 # %% Visualization of the bounding boxes
 
-def visualize_raw(image, results, label=True):
+def visualize_raw(image, results, color_set=None):
     plt.imshow(image)
     for result in results:
         bbox = result['bbox']
         confidence = result['confidence']
         idx = result['class_idx']
-        color = np.random.uniform(size=3)  # if label else (1, 0, 0)
+        color = np.random.uniform(size=3) \
+            if color_set is None else color_set[idx-1]
         plt.gca().add_patch(
-            plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
+            plt.Rectangle((bbox[0]-1, bbox[1]-1),
+                          bbox[2]-bbox[0]+1, bbox[3]-bbox[0]+1,
                           edgeColor=color, fill=False)
         )
+        plt.text(bbox[0], bbox[1]+12,
+                 '{}: {:.2f}'.format(voc_names[idx], confidence),
+                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
+
+
+def visualize(x, results, label=True):
+    plt.imshow(x.detach().cpu().squeeze().numpy().transpose((1, 2, 0))
+               * np.array(imagenet_norm['std'])
+               + np.array(imagenet_norm['mean']))
+    for result in results:
+        bbox = result['bbox']
+        confidence = result['confidence']
+        idx = result['class_idx']
+        color = np.random.uniform(size=3)
+        plt.gca().add_patch(
+            plt.Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
+                          edgeColor=color, fill=False))
         if label:
             plt.text(bbox[0], bbox[1]+12,
                      '{}: {:.2f}'.format(voc_names[idx], confidence),
                      bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
     plt.show()
-
-
-def visualize(x, results, label=True):
-    mean = np.array(imagenet_norm['mean'])
-    std = np.array(imagenet_norm['std'])
-    img = x.detach().cpu().squeeze().numpy().transpose((1, 2, 0)) * std + mean
-    visualize_raw(img, results, label)
 
 
 # %% Main
