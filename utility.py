@@ -90,9 +90,9 @@ def clip_box(lst, W, H, keep_neg=True):
     lst[3] = lst[3] + lst[1] * (lst[1]<0).float()
     lst[1] = torch.max(lst[1], zeros)
     # Clip w
-    lst[2] = torch.min(lst[2], Ws-lst[0])
+    lst[2] = torch.min(lst[2], Ws-1-lst[0])
     # Clip h
-    lst[3] = torch.min(lst[3], Hs-lst[1])
+    lst[3] = torch.min(lst[3], Hs-1-lst[1])
     
     if keep_neg:
         return lst
@@ -423,9 +423,11 @@ def process_bar(t, num, total):
     print('\r' + prefix + tokens + suffix, end='')
 
 
+head = '| tot time | time |    lr   | epoch |  step |  image | nas | nps |' \
+       ' rpn cls | roi cls | rpn reg | roi reg |  loss  | train map | test map |'
+
+
 def pretty_head():
-    head = '| tot time | time |    lr   | epoch |  step |  image | nas | nps |' \
-           ' rpn cls | roi cls | rpn reg | roi reg |  loss  | train map | test map |'
     print(''.join('=' if head[i] != '|' else '+' for i in range(len(head))))
     print(head)
     print(''.join('-' if head[i] != '|' else '+' for i in range(len(head))))
@@ -446,7 +448,5 @@ def pretty_body(summary, start, iter_time, lr, epoch, step, image_id, train_map,
 
 
 def pretty_tail():
-    head = '| tot time | time |    lr   | epoch |  step |  image | nas | nps |' \
-           ' rpn cls | roi cls | rpn reg | roi reg |  loss  | train map | test map |'
     print()
     print(''.join('-' if head[i] != '|' else '+' for i in range(len(head))))

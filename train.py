@@ -30,7 +30,7 @@ from utility import pretty_head, pretty_body, pretty_tail
 # Training strategy
 num_epochs = 16
 learning_rate = 1e-3
-weight_decay = 5e-5
+weight_decay = 5e-4
 decay_epochs = []
 
 # Global variables
