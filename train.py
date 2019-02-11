@@ -139,7 +139,7 @@ def stage_init(summary_dic, files_dic, load_model):
     if files_dic:
         # Load some checkpoint files (if any)
         params = files_dic['filename']
-        epoch = files_dic['epoch']
+        epoch = files_dic['epoch']-1
         step = files_dic['step']
     else:
         # Otherwise these components will be initialized randomly

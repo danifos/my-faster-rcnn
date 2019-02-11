@@ -17,6 +17,7 @@ from sampler import create_proposals, sample_anchors, sample_proposals
 from utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
 from consts import bbox_normalize_stds, bbox_normalize_means
 from consts import num_classes, num_anchors
+from consts import use_caffe, caffe_model
 
 
 # %% Utility layers
@@ -133,8 +134,16 @@ class FasterRCNN(nn.Module):
               (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
         """
         super(FasterRCNN, self).__init__()
-        pretrained = False if params else True
-        VGG = torchvision.models.vgg16(pretrained)
+        if not params:
+            if use_caffe:
+                VGG = torchvision.models.vgg16(False)
+                VGG.load_state_dict(torch.load(caffe_model))
+                print('Loaded caffe vgg16 from {}'.format(caffe_model))
+            else:
+                VGG = torchvision.models.vgg16(True)
+                print('Loaded torchvision vgg16')
+        else:
+            VGG = torchvision.models.vgg16(False)
         # Freeze the first 4 conv layers
         for p in list(VGG.features.parameters())[:8]:
             p.requires_grad = False
@@ -155,7 +164,7 @@ class FasterRCNN(nn.Module):
             if 'optimizer' in state_dict:
                 self.load_state_dict(state_dict['model'])
                 self.load_optimizer = state_dict['optimizer']
-                print('Loaded pre-trained model and optimizer')
+                print('Loaded model and optimizer from checkpoint')
             else:
                 self.load_state_dict(state_dict)
                 print('Warning: Loaded pre-trained model, no optimizer')

@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 from utility import _IoU, process_bar
 from consts import num_classes
 from consts import dtype, device, voc_names
-from consts import imagenet_norm
 
 
 def predict_raw(model, image):
@@ -34,6 +33,8 @@ def predict_raw(model, image):
             - confidence
             - class_idx
     """
+    # FIXME: transformation of numpy arrays
+    assert False, 'this function is not yet fixed'
     import cv2 as cv
     from PIL import Image
     import torchvision.transforms as T
@@ -58,9 +59,9 @@ def predict_raw(model, image):
         width, height = image.shape[1], image.shape[0]
         w, h = scale_image(width, height)
         x = cv.resize(image, (w, h), cv.INTER_CUBIC)
-        mean = np.array(imagenet_norm['mean'])
-        std = np.array(imagenet_norm['std'])
-        x = ((x/255 - mean) / std).transpose((2, 0, 1))
+        # mean = np.array(imagenet_norm['mean'])
+        # std = np.array(imagenet_norm['std'])
+        # x = ((x/255 - mean) / std).transpose((2, 0, 1))
         x = Tensor(x).unsqueeze(0)
 
     else:
@@ -316,9 +317,11 @@ def visualize_raw(image, results, color_set=None):
 
 
 def visualize(x, results, label=True):
-    plt.imshow(x.detach().cpu().squeeze().numpy().transpose((1, 2, 0))
-               * np.array(imagenet_norm['std'])
-               + np.array(imagenet_norm['mean']))
+    # FIXME: transformation from input to numpy image
+    assert False, 'this function is not yet fixed'
+    # plt.imshow(x.detach().cpu().squeeze().numpy().transpose((1, 2, 0))
+    #            * np.array(imagenet_norm['std'])
+    #            + np.array(imagenet_norm['mean']))
     for result in results:
         bbox = result['bbox']
         confidence = result['confidence']

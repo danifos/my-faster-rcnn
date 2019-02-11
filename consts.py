@@ -28,17 +28,27 @@ num_anchors = len(anchor_sizes)
 
 feature_scale = 16  # For vgg16, 2**4 (4 is the number of pooling layers)
 
-imagenet_norm = {'mean': [0.485, 0.456, 0.406],
-                 'std': [0.229, 0.224, 0.225]}
+# Use caffe model:
+# BGR, 0~255, mean subtracted
+use_caffe = True
+caffe_model = 'vgg16_caffe.pth'
+
+torchvision_mean = [0.485, 0.456, 0.406]
+torchvision_std = [0.229, 0.224, 0.225]
+caffe_mean = [122.7717, 115.9465, 102.9801]
+
 # Use this transform if torchvision pretrained model is used
 torchvision_transform = T.Compose([
     T.ToTensor(),
-    T.Normalize(**imagenet_norm)
+    T.Normalize(mean=torchvision_mean, std=torchvision_std)
 ])
 # Use this if caffe pretrained model is used
-standard_transform = T.ToTensor()
-use_torchvision = True
-transform = torchvision_transform if use_torchvision else standard_transform
+caffe_transform = T.Compose([
+    T.ToTensor(),
+    T.Lambda(lambda x: x[[2, 1, 0], :, :] * 255),
+    T.Normalize(mean=caffe_mean, std=[1, 1, 1])
+])
+transform = caffe_transform if use_caffe else torchvision_transform
 
 
 # %% Information of the data sets
