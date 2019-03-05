@@ -12,12 +12,12 @@ import os
 import argparse
 from time import time
 
-from sampler import VOCDetection, data_loader, batch_data_loader
-from consts import voc_test_data_dir, voc_test_ann_dir
-from consts import transform, voc_names, low_memory
+from lib.sampler import VOCDetection, data_loader, batch_data_loader
+from lib.consts import voc_test_data_dir, voc_test_ann_dir
+from lib.consts import transform, voc_names, low_memory
 import train
 from test import predict, predict_batch
-from utility import results_to_raw, process_bar
+from lib.utility import results_to_raw, process_bar
 
 
 parser = argparse.ArgumentParser()

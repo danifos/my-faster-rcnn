@@ -14,15 +14,15 @@ import pickle
 from time import time
 import os
 
-from sampler import CocoDetection, VOCDetection, data_loader
-from faster_r_cnn import FasterRCNN
-from consts import dtype, device
+from lib.sampler import CocoDetection, VOCDetection, data_loader
+from lib.faster_r_cnn import FasterRCNN
+from lib.consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
-from consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir
-from consts import transform
+from lib.consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir, result_dir
+from lib.consts import transform
 from test import evaluate
 from plot import plot_summary
-from utility import pretty_head, pretty_body, pretty_tail
+from lib.utility import pretty_head, pretty_body, pretty_tail
 
 
 # %% Basic settings
@@ -67,6 +67,7 @@ def init(load_model=True):
     summary_dic = None
     files_dic = {}
 
+    os.chdir(result_dir)
     for cur, _, files in os.walk('.'):  # check if we have the logdir already
         if cur == os.path.join('.', logdir).rstrip('/'):  # we've found it
             # open the summary file
@@ -81,6 +82,8 @@ def init(load_model=True):
             
     else:  # there's not, make one
         os.mkdir(logdir)
+
+    os.chdir('..')
 
     stage_init(summary_dic, files_dic, load_model)
 

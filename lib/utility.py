@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from consts import dtype, device, Tensor, low_memory
+from .consts import dtype, device, Tensor, low_memory
 
 from time import time
 

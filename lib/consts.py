@@ -10,6 +10,14 @@ import torch
 import torchvision.transforms as T
 import numpy as np
 import random
+import os.path as osp
+
+
+# %% Directory hierarchy
+
+model_dir = 'data'
+result_dir = 'results'
+log_dir = 'log'
 
 
 # %% Compute the size of the anchors
@@ -31,7 +39,7 @@ feature_scale = 16  # For vgg16, 2**4 (4 is the number of pooling layers)
 # Use caffe model:
 # BGR, 0~255, mean subtracted
 use_caffe = True
-caffe_model = 'vgg16_caffe.pth'
+caffe_model = osp.join(model_dir, 'vgg16_caffe.pth')
 
 torchvision_mean = [0.485, 0.456, 0.406]
 torchvision_std = [0.229, 0.224, 0.225]

@@ -18,10 +18,11 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from PIL import Image
 
-from utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
-from consts import anchor_sizes, num_anchors, id2idx, name2idx
-from consts import Tensor, LongTensor, device
-from consts import feature_scale, bbox_normalize_means, bbox_normalize_stds
+from .utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
+from .consts import anchor_sizes, num_anchors, id2idx, name2idx
+from .consts import Tensor, LongTensor, device
+from .consts import feature_scale, bbox_normalize_means, bbox_normalize_stds
+from .consts import model_dir
         
 
 # %% CoCoDetection class
@@ -194,7 +195,7 @@ def collate_batch(batch):
 
 class BatchDataLoader:
     def __init__(self, dataset, batch_size,
-                 index_file='index.pkl'):
+                 index_file=os.path.join(model_dir, 'index.pkl')):
         import pickle
         self.dataset = dataset
         self.num_images = len(self.dataset)

@@ -13,11 +13,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 
-from sampler import create_proposals, sample_anchors, sample_proposals
-from utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
-from consts import bbox_normalize_stds, bbox_normalize_means
-from consts import num_classes, num_anchors
-from consts import use_caffe, caffe_model
+from .sampler import create_proposals, sample_anchors, sample_proposals
+from .utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
+from .consts import bbox_normalize_stds, bbox_normalize_means
+from .consts import num_classes, num_anchors
+from .consts import use_caffe, caffe_model
 
 
 # %% Utility layers

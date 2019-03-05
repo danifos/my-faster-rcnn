@@ -10,9 +10,9 @@ from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utility import _IoU, process_bar
-from consts import num_classes
-from consts import dtype, device, voc_names
+from lib.utility import _IoU, process_bar
+from lib.consts import num_classes
+from lib.consts import dtype, device, voc_names
 
 
 def predict_raw(model, image):
@@ -38,9 +38,9 @@ def predict_raw(model, image):
     import cv2 as cv
     from PIL import Image
     import torchvision.transforms as T
-    from sampler import scale_image
-    from consts import Tensor, transform
-    from utility import results_to_raw
+    from lib.sampler import scale_image
+    from lib.consts import Tensor, transform
+    from lib.utility import results_to_raw
 
     if isinstance(image, str):
         image = Image.open(image)
@@ -344,9 +344,9 @@ def init(logdir, test_set, use_batch):
     train.logdir = logdir
     train.init()
     if test_set:
-        from sampler import VOCDetection, data_loader, batch_data_loader
-        from consts import voc_test_data_dir, voc_test_ann_dir, transform
-        from consts import low_memory
+        from lib.sampler import VOCDetection, data_loader, batch_data_loader
+        from lib.consts import voc_test_data_dir, voc_test_ann_dir, transform
+        from lib.consts import low_memory
         voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
                                 transform=transform, flip=False, no_diff=False)
         voc_test.mute = True
