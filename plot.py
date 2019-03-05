@@ -10,6 +10,8 @@ Created on Fri Jan 11 14:50:47 2019
 
 import os
 import numpy as np
+import matplotlib as mpl
+mpl.rcParams['agg.path.chunksize'] = 10000
 import matplotlib.pyplot as plt
 import visdom
 
