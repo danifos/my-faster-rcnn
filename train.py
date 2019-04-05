@@ -67,12 +67,11 @@ def init(load_model=True):
     summary_dic = None
     files_dic = {}
 
-    os.chdir(result_dir)
-    for cur, _, files in os.walk('.'):  # check if we have the logdir already
-        if cur == os.path.join('.', logdir).rstrip('/'):  # we've found it
+    for cur, _, files in os.walk(result_dir):  # check if we have the logdir already
+        if cur == os.path.join(result_dir, logdir).rstrip('/'):  # we've found it
             # open the summary file
             try:
-                with open(os.path.join(logdir, 'summary.pkl'), 'rb') as fo:
+                with open(os.path.join(result_dir, logdir, 'summary.pkl'), 'rb') as fo:
                     summary_dic = pickle.load(fo, encoding='bytes')
             except:
                 print('summary.pkl not found in existing logdir')
@@ -81,9 +80,7 @@ def init(load_model=True):
             break
             
     else:  # there's not, make one
-        os.mkdir(logdir)
-
-    os.chdir('..')
+        os.mkdir(os.path.join(result_dir, logdir))
 
     stage_init(summary_dic, files_dic, load_model)
 
@@ -111,7 +108,7 @@ def search_files(files):
             flag = True
 
         if flag:
-            dic['filename'] = os.path.join(logdir, ckpt)
+            dic['filename'] = os.path.join(result_dir, logdir, ckpt)
             dic['epoch'] = e
             dic['step'] = s
 
@@ -163,14 +160,13 @@ def stage_init(summary_dic, files_dic, load_model):
 # %% Save
 
 def save_model(e, s):
-    filename = os.path.join(logdir, 'param-{}-{}.pth'.format(e, s))
+    filename = os.path.join(result_dir, logdir, 'param-{}-{}.pth'.format(e, s))
     model.save(filename)
 
 
 def save_summary():
-    file = open(os.path.join(logdir, 'summary.pkl'), 'wb')
-    pickle.dump(summary, file)
-    file.close()
+    with open(os.path.join(result_dir, logdir, 'summary.pkl'), 'wb') as fo:
+        pickle.dump(summary, fo)
 
 
 def save():

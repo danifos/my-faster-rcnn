@@ -16,8 +16,9 @@ import torchvision
 from .sampler import create_proposals, sample_anchors, sample_proposals
 from .utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
 from .consts import bbox_normalize_stds, bbox_normalize_means
-from .consts import num_classes, num_anchors
+from .consts import num_classes, num_anchors, device
 from .consts import use_caffe, caffe_model
+from .roi_pooling.simple_faster_rcnn_pytorch.roi_module import RoIPooling2D
 
 
 # %% Utility layers
@@ -65,6 +66,21 @@ class RoIPooling(nn.Module):
             ret[i] = self.pool(x[:, ry:ry+rh+1, rx:rx+rw+1])
         
         return torch.stack(ret, dim=0)
+
+
+# Redirect to the borrowed version of RoIPooling
+
+class RoIPoolingNew(nn.Module):
+    def __init__(self, size=(7,7), spatial_scale=1/16):
+        super(RoIPooling, self).__init__()
+        self.spatial_scale = spatial_scale
+        self.kernel = RoIPooling2D(*size, spatial_scale)
+    def forward(self, x, _, rois):
+        N = rois.shape[0]
+        rois[:, 2:] += rois[:, :2]
+        rois *= self.spatial_scale
+        rois = torch.cat((torch.zeros(N, 1, device=device), rois), dim=1).long()
+        return self.kernel(x, rois.detach())
 
 
 # %% 2 main modules
