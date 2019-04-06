@@ -7,6 +7,7 @@ Created on Fri Feb  1 09:34:25 2019
 """
 
 import sys
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,30 +15,71 @@ import cv2 as cv
 
 import train
 from test import predict_raw, visualize_raw
-from consts import num_classes
+from lib.consts import num_classes
 
 
 def main():
-    if len(sys.argv) <= 1:
-        print('logdir required.')
-        sys.exit(1)
+    import argparse
 
-    train.logdir = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mode', type=str, nargs=1)
+    parser.add_argument('--logdir', type=str, default='result')
+    parser.add_argument('--filedir', '-d', type=str)
+    parser.add_argument('--savedir', '-s', type=str)
+    parser.add_argument('--format', '-f', type=str, default='png')
+    args = parser.parse_args()
+
+    train.logdir = args.logdir
     train.init()
     model = train.model
     model.eval()
 
     color_set = np.random.uniform(size=(num_classes, 3))
 
+    savedir = args.savedir
+    format = args.format
+    counter = [0]
+    def inner(img):
+        image, results = predict_raw(model, img)
+        plt.cla()
+        visualize_raw(image, results, color_set=color_set)
+        plt.axis('off')
+        if savedir:
+            plt.savefig('{}.{}'.format(os.path.join(savedir, '%06d'%counter[0]), format), format=format)
+            counter[0] += 1
+        plt.pause(0.03)
+
+    mode = args.mode[0]
+    if mode == 'camera':
+        camera(inner)
+    elif mode == 'video':
+        if not args.filedir:
+            print('filedir required')
+            sys.exit(1)
+        video(args.filedir, inner)
+    else:
+        print('unrecognized mode {}'.format(mode))
+
+
+def camera(inner):
     cap = cv.VideoCapture(0)
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        plt.cla()
-        image, results = predict_raw(model, frame)
-        visualize_raw(image, results, color_set=color_set)
-        plt.pause(0.03)
+        inner(frame)
+
+
+def video(filedir, inner):
+    try:
+        lst = list(os.walk(filedir))[0]
+    except:
+        print("error")
+        return
+    lst[2].sort()
+    lst = [os.path.join(lst[0], name) for name in lst[2]]
+    for imgpath in lst:
+        inner(imgpath)
 
 
 if __name__ == '__main__':

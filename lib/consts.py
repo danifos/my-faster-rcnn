@@ -41,23 +41,30 @@ feature_scale = 16  # For vgg16, 2**4 (4 is the number of pooling layers)
 use_caffe = True
 caffe_model = osp.join(model_dir, 'vgg16_caffe.pth')
 
-torchvision_mean = [0.485, 0.456, 0.406]
-torchvision_std = [0.229, 0.224, 0.225]
-caffe_mean = [122.7717, 115.9465, 102.9801]
-
-# Use this transform if torchvision pretrained model is used
-torchvision_transform = T.Compose([
-    T.ToTensor(),
-    T.Normalize(mean=torchvision_mean, std=torchvision_std)
-])
-# Use this if caffe pretrained model is used
-caffe_transform = T.Compose([
-    T.ToTensor(),
-    T.Lambda(lambda x: x[[2, 1, 0], :, :] * 255),
-    T.Normalize(mean=caffe_mean, std=[1, 1, 1])
-])
-transform = caffe_transform if use_caffe else torchvision_transform
-
+if use_caffe:
+    caffe_mean = np.array([122.7717, 115.9465, 102.9801])
+    transform = T.Compose([
+        T.ToTensor(),
+        T.Lambda(lambda x: x[[2, 1, 0], :, :] * 255),
+        T.Normalize(mean=caffe_mean, std=np.ones(3))
+    ])
+    inv_transform= T.Compose([
+        T.Lambda(lambda x: x.squeeze()),
+        T.Normalize(mean=-caffe_mean, std=np.ones(3)*255),
+        T.Lambda(lambda x: x[[2, 1, 0], :, :].cpu().numpy())
+    ])
+else:
+    torchvision_mean = np.array([0.485, 0.456, 0.406])
+    torchvision_std = np.array([0.229, 0.224, 0.225])
+    transform = T.Compose([
+        T.ToTensor(),
+        T.Normalize(mean=torchvision_mean, std=torchvision_std)
+    ])
+    inv_transform = T.Compose([
+        T.Normalize(mean=np.zeros(3), std=1/torchvision_std),
+        T.Normalize(mean=torchvision_mean, std=np.ones(3)),
+        T.Lambda(lambda x: x.cpu().numpy())
+    ])
 
 # %% Information of the data sets
 

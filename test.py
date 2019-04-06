@@ -9,10 +9,15 @@ Created on Tue Nov  6 11:30:00 2018
 from time import time
 import numpy as np
 import matplotlib.pyplot as plt
+import torchvision.transforms as T
+import cv2 as cv
+from PIL import Image
 
 from lib.utility import _IoU, process_bar
-from lib.consts import num_classes
-from lib.consts import dtype, device, voc_names
+from lib.sampler import scale_image
+from lib.utility import results_to_raw
+from lib.consts import Tensor, transform, inv_transform
+from lib.consts import num_classes, dtype, device, voc_names
 
 
 def predict_raw(model, image):
@@ -34,13 +39,7 @@ def predict_raw(model, image):
             - class_idx
     """
     # FIXME: transformation of numpy arrays
-    assert False, 'this function is not yet fixed'
-    import cv2 as cv
-    from PIL import Image
-    import torchvision.transforms as T
-    from lib.sampler import scale_image
-    from lib.consts import Tensor, transform
-    from lib.utility import results_to_raw
+    # assert False, 'this function is not yet fixed'
 
     if isinstance(image, str):
         image = Image.open(image)
@@ -59,10 +58,7 @@ def predict_raw(model, image):
         width, height = image.shape[1], image.shape[0]
         w, h = scale_image(width, height)
         x = cv.resize(image, (w, h), cv.INTER_CUBIC)
-        # mean = np.array(imagenet_norm['mean'])
-        # std = np.array(imagenet_norm['std'])
-        # x = ((x/255 - mean) / std).transpose((2, 0, 1))
-        x = Tensor(x).unsqueeze(0)
+        x = transform(x).unsqueeze(0)
 
     else:
         assert False, "Unsupported type"
@@ -308,7 +304,7 @@ def visualize_raw(image, results, color_set=None):
             if color_set is None else color_set[idx-1]
         plt.gca().add_patch(
             plt.Rectangle((bbox[0]-1, bbox[1]-1),
-                          bbox[2]-bbox[0]+1, bbox[3]-bbox[0]+1,
+                          bbox[2]-bbox[0]+1, bbox[3]-bbox[1]+1,
                           edgeColor=color, fill=False)
         )
         plt.text(bbox[0], bbox[1]+12,
@@ -317,11 +313,7 @@ def visualize_raw(image, results, color_set=None):
 
 
 def visualize(x, results, label=True):
-    # FIXME: transformation from input to numpy image
-    assert False, 'this function is not yet fixed'
-    # plt.imshow(x.detach().cpu().squeeze().numpy().transpose((1, 2, 0))
-    #            * np.array(imagenet_norm['std'])
-    #            + np.array(imagenet_norm['mean']))
+    plt.imshow(inv_transform(x).transpose((1, 2, 0)))
     for result in results:
         bbox = result['bbox']
         confidence = result['confidence']

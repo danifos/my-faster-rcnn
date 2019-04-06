@@ -14,6 +14,7 @@ import matplotlib as mpl
 mpl.rcParams['agg.path.chunksize'] = 10000
 import matplotlib.pyplot as plt
 import visdom
+from lib.consts import result_dir
 
 
 # %% Utils for plotting results
@@ -143,7 +144,7 @@ def main():
     import train
     train.logdir = args.logdir
     train.init(load_model=False)
-    plot_summary(train.logdir, train.summary, args.mute)
+    plot_summary(os.path.join(result_dir, train.logdir), train.summary, args.mute)
 
 
 if __name__ == '__main__':
