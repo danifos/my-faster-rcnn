@@ -52,6 +52,11 @@ def main():
     mode = args.mode[0]
     if mode == 'camera':
         camera(inner)
+    elif mode == 'image':
+        if not args.filedir:
+            print('filename required')
+            sys.exit(1)
+        image(args.filedir, inner)
     elif mode == 'video':
         if not args.filedir:
             print('filedir required')
@@ -68,6 +73,10 @@ def camera(inner):
         if not ret:
             break
         inner(frame)
+
+def image(filedir, inner):
+    inner(filedir)
+    plt.show()
 
 
 def video(filedir, inner):
