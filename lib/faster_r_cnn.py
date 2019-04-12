@@ -251,7 +251,7 @@ class FasterRCNN(nn.Module):
                               'roi_cls': roi_cls, 'roi_reg': roi_reg}}
         return loss, summary
 
-    def test_RCNN(self, x, a, features, RPN_cls, RPN_reg):
+    def test_RCNN(self, x, a, features, RPN_cls, RPN_reg, fetch_tensors=False):
         # 300 top-ranked proposals at test time
         proposals = create_proposals(RPN_cls, RPN_reg,
                                      x, a['scale'][0], training=False)
@@ -262,6 +262,10 @@ class FasterRCNN(nn.Module):
         roi_coords = RCNN_reg.view(N, M, 4).permute(2, 0, 1)
         roi_coords = roi_coords * bbox_normalize_stds.view(4, 1, 1) \
                      + bbox_normalize_means.view(4, 1, 1)
+
+        if fetch_tensors:
+            return roi_scores, roi_coords, proposals
+
         proposals = proposals.unsqueeze(2).expand_as(roi_coords)
         roi_coords = inv_parameterize(roi_coords, proposals)
 

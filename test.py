@@ -296,6 +296,7 @@ def assign_detection(lst, targets, threshold=0.5):
 
 def visualize_raw(image, results, color_set=None):
     plt.imshow(image)
+    xlim, ylim = plt.xlim(), plt.ylim()
     for result in results:
         bbox = result['bbox']
         confidence = result['confidence']
@@ -310,6 +311,8 @@ def visualize_raw(image, results, color_set=None):
         plt.text(bbox[0], bbox[1]+12,
                  '{}: {:.2f}'.format(voc_names[idx], confidence),
                  bbox=dict(facecolor='white', edgecolor='none', alpha=0.5))
+    plt.xlim(xlim)
+    plt.ylim(ylim)
 
 
 def visualize(x, results, label=True):

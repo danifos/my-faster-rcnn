@@ -39,14 +39,23 @@ def main():
     savedir = args.savedir
     format = args.format
     counter = [0]
+    dpi = 200
     def inner(img):
         image, results = predict_raw(model, img)
+        if counter[0] == 0:
+            h, w = image.shape[:2]
+            plt.figure(figsize=(w/dpi, h/dpi))
         plt.cla()
         visualize_raw(image, results, color_set=color_set)
-        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0,
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
         if savedir:
-            plt.savefig('{}.{}'.format(os.path.join(savedir, '%06d'%counter[0]), format), format=format)
-            counter[0] += 1
+            plt.savefig('{}.{}'.format(os.path.join(savedir, '%06d'%counter[0]), format), format=format, dpi=dpi,
+                        bbox_inches='tight', pad_inches=0)
+        counter[0] += 1
         plt.pause(0.03)
 
     mode = args.mode[0]
