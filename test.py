@@ -13,11 +13,11 @@ import torchvision.transforms as T
 import cv2 as cv
 from PIL import Image
 
-from lib.utility import _IoU, process_bar
-from lib.sampler import scale_image
-from lib.utility import results_to_raw
-from lib.consts import Tensor, transform, inv_transform
-from lib.consts import num_classes, dtype, device, voc_names
+from .lib.utility import _IoU, process_bar
+from .lib.sampler import scale_image
+from .lib.utility import results_to_raw
+from .lib.consts import Tensor, transform, inv_transform
+from .lib.consts import num_classes, dtype, device, voc_names
 
 
 def predict_raw(model, image):
@@ -38,9 +38,6 @@ def predict_raw(model, image):
             - confidence
             - class_idx
     """
-    # FIXME: transformation of numpy arrays
-    # assert False, 'this function is not yet fixed'
-
     if isinstance(image, str):
         image = Image.open(image)
 
@@ -59,6 +56,7 @@ def predict_raw(model, image):
         w, h = scale_image(width, height)
         x = cv.resize(image, (w, h), cv.INTER_CUBIC)
         x = transform(x).unsqueeze(0)
+        x = x.to(dtype=dtype, device=device)
 
     else:
         assert False, "Unsupported type"
