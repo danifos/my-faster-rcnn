@@ -20,7 +20,7 @@ from .lib.consts import Tensor, transform, inv_transform
 from .lib.consts import num_classes, dtype, device, voc_names
 
 
-def predict_raw(model, image):
+def predict_raw(model, image, cnn_only=False):
     """
     Predict the object in a raw image.
 
@@ -62,7 +62,10 @@ def predict_raw(model, image):
         assert False, "Unsupported type"
 
     scale = (w/width, h/height)
-    results = model({'scale': scale}, x)
+    results = model({'scale': scale}, x, cnn_only=cnn_only)
+    if cnn_only:
+        return None
+
     results_to_raw(results, scale, width, height)
 
     return image, results
