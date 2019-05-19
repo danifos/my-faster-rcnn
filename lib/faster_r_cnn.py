@@ -190,7 +190,7 @@ class FasterRCNN(nn.Module):
                 child.weight_init()
             print('Initialized model randomly')
 
-    def forward(self, a, x, y=None, cnn_only=False):
+    def forward(self, a, x, y=None):
         """
         Inputs:
             - a: Info about the image
@@ -215,8 +215,6 @@ class FasterRCNN(nn.Module):
         training = True if y else False
 
         features = self.CNN(x)  # extract features from x
-        if cnn_only:
-            return None
 
         # Get 1x(2*A)xHxW classification scores,
         # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN

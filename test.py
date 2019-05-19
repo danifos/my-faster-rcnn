@@ -61,11 +61,11 @@ def predict_raw(model, image, cnn_only=False):
     else:
         assert False, "Unsupported type"
 
+    if cnn_only:
+        return model.CNN(x)
+
     scale = (w/width, h/height)
     results = model({'scale': scale}, x, cnn_only=cnn_only)
-    if cnn_only:
-        return None
-
     results_to_raw(results, scale, width, height)
 
     return image, results
