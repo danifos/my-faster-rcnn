@@ -67,7 +67,7 @@ def IoU(bb1, bb2):
 def clip_box(lst, W, H, keep_neg=True):
     """
     Clip bounding boxes to limit them is a scale
-    
+
     Inputs:
         - lst: Tensor of bounding boxes (x,y,w,h), size (4xN)
         - W: Width to be limited
@@ -80,9 +80,9 @@ def clip_box(lst, W, H, keep_neg=True):
     zeros = torch.zeros(N, device=device)
     Ws = torch.ones(N, device=device) * W
     Hs = torch.ones(N, device=device) * H
-    
+
     #print(lst)
-    
+
     # Clip x
     lst[2] = lst[2] + lst[0] * (lst[0]<0).float()
     lst[0] = torch.max(lst[0], zeros)
@@ -93,16 +93,16 @@ def clip_box(lst, W, H, keep_neg=True):
     lst[2] = torch.min(lst[2], Ws-1-lst[0])
     # Clip h
     lst[3] = torch.min(lst[3], Hs-1-lst[1])
-    
+
     if keep_neg:
         return lst
-    
+
     # Eliminate bounding boxes that have non-positive values
     pos = torch.sum(lst>0, 0)
     indices = torch.from_numpy(np.where(pos == 4)[0]).to(device=device)
     indices = indices.unsqueeze(0).expand(4, indices.shape[0])
     ret = torch.gather(lst, 1, indices)
-    
+
     return ret
 
 
@@ -110,20 +110,20 @@ def filter_boxes(lst, min_size, *args):
     """
     Ignore the cross-boundary anchors,
     as well as their corresponding coordinates and scores.
-    
+
     Inputs:
         - lst, W, H: Same as clip_box()
         - args: Other tensors to be suppressed together with the anchors
     Returns:
         - rets: Tensors corresponding to args
     """
-    
+
     _, _, w, h = lst
     mask = (w >= min_size) & (h >= min_size)
-    indices = torch.from_numpy(np.where(mask)[0]).to(device=device)
+    indices = torch.from_numpy(np.where(mask.cpu())[0]).to(device=device)
     M = indices.shape[0]
     indices = indices.unsqueeze(0)
-    
+
     for arg in args:
         yield torch.gather(arg, 1, indices.expand(arg.shape[0], M))
 
@@ -144,9 +144,9 @@ def NMS(coords, scores, pre_n, post_n, threshold=0.7, batch_size=512):
     lst = coords[:, indices]
     N = lst.shape[1]
     ret = []
-    det = torch.ones(N, dtype=torch.uint8, device=device)
+    det = torch.ones(N, dtype=torch.bool, device=device)
     IoUs = None
-    
+
     for i in range(N):
         if len(ret) == post_n:
             break
@@ -167,7 +167,7 @@ def NMS_lm(coords, scores, pre_n, post_n, threshold=0.7):
     lst = coords[:, indices]
     N = lst.shape[1]
     ret = []
-    det = torch.ones(N, dtype=torch.uint8, device=device)
+    det = torch.ones(N, dtype=torch.bool, device=device)
 
     for i in range(N):
         if len(ret) == post_n:
@@ -268,7 +268,7 @@ def smooth_L1(x, t, in_weight, sigma):
 def localization_loss(coords, gt_coords, gt_labels, sigma):
     """
     The regression loss for both RPN and Fast R-CNN
-    
+
     Inputs:
         - coords: Parameterized predicted coords (size: 4xN)
         - gt_coords: Parameterized ground-truth coords (size: 4xN)
@@ -288,7 +288,7 @@ def localization_loss(coords, gt_coords, gt_labels, sigma):
 def RPN_loss(p, p_s, t, t_s, sigma=3):
     """
     Compute the multi-task loss function for an image of RPN
-    
+
     Inputs:
         - p: The predicted probability of anchor i being an object (size: 1x18xHxW)
         - p_s: The binary class label of an anchor mentioned before (size: N)
@@ -319,7 +319,7 @@ def RPN_loss(p, p_s, t, t_s, sigma=3):
 def RoI_loss(p, u, t, v, sigma=1):
     """
     Compute the multi-task loss function for an image of Fast R-CNN
-    
+
     Inputs:
         - p: Discrete probability distribution per RoI output by Fast R-CNN (size: Nx(C+1))
         - u: Ground-truth class per RoI (size: N)
@@ -370,12 +370,12 @@ def parameterize(bbox, anchor, dtype=None):
     bbox_y = bbox[1] + bbox[3]/2
     anchor_x = anchor[0] + anchor[2]/2
     anchor_y = anchor[1] + anchor[3]/2
-    
+
     t[0] = (bbox_x - anchor_x) / anchor[2]
     t[1] = (bbox_y - anchor_y) / anchor[3]
     t[2] = torch.log(bbox[2] / anchor[2])
     t[3] = torch.log(bbox[3] / anchor[3])
-    
+
     return t
 
 
@@ -384,7 +384,7 @@ def inv_parameterize(t, anchor, dtype=None):
     Inputs:
         - t: Parameterized coordinates
           scale as parameterization
-        - anchor: Tuple of size 4 or 
+        - anchor: Tuple of size 4 or
           Tensor of size 4xN or 4xHxW [(x, y, w, h) for each]
           scale as input
     Returns:
@@ -395,18 +395,18 @@ def inv_parameterize(t, anchor, dtype=None):
         bbox = dtype(t.shape)
     else:  # torch.cuda.FloatTensor by default
         bbox = Tensor(t.shape)
-        
+
     anchor_x = anchor[0] + anchor[2]/2
     anchor_y = anchor[1] + anchor[3]/2
-    
+
     bbox_x = t[0] * anchor[2] + anchor_x
     bbox_y = t[1] * anchor[3] + anchor_y
     bbox[2] = torch.exp(t[2]) * anchor[2]
     bbox[3] = torch.exp(t[3]) * anchor[3]
-    
+
     bbox[0] = bbox_x - bbox[2]/2
     bbox[1] = bbox_y - bbox[3]/2
-    
+
     return bbox
 
 

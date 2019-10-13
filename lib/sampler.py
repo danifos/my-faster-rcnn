@@ -23,7 +23,7 @@ from .consts import anchor_sizes, num_anchors, id2idx, name2idx
 from .consts import Tensor, LongTensor, device
 from .consts import feature_scale, bbox_normalize_means, bbox_normalize_stds
 from .consts import model_dir
-        
+
 
 # %% CoCoDetection class
 
@@ -44,7 +44,7 @@ class CocoDetection(Dataset):
         self.coco = COCO(ann)
         self.ids = list(self.coco.imgs.keys())
         self.transform = transform
-    
+
     def __getitem__(self, index):
         """
         Inputs:
@@ -61,7 +61,7 @@ class CocoDetection(Dataset):
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         for target in targets:
             target['class_idx'] = id2idx[target['category_id']]
-        
+
         img, targets = transform_image(img, targets, self.transform)
 
         return img, targets
@@ -73,7 +73,7 @@ class CocoDetection(Dataset):
 # %% Pascal VOCDetection class
 
 class XMLHandler(xml.sax.ContentHandler):
-    
+
     def __init__(self, targets, no_diff):
         self.targets = targets
         self.no_diff = no_diff
@@ -101,7 +101,7 @@ class XMLHandler(xml.sax.ContentHandler):
                 self.targets.pop()
 
         self.cur = ''
-    
+
     def characters(self, cnt):
         if self.cur == 'name':
             self.targets[-1]['class_idx'] = name2idx[cnt]
@@ -119,20 +119,41 @@ class VOCDetection(Dataset):
         - transform (callable, optional): A function/transform that takes in an PIL image
           and returns a transformed version. E.g, ``transforms.ToTensor``
     """
-        
-    def __init__(self, root, ann, transform=None, flip=True, no_diff=True, subset=0):
-        self.root = root
-        self.ann = ann
+
+#     def __init__(self, root, ann, transform=None, flip=True, no_diff=True, subset=0):
+#         self.root = root
+#         self.ann = ann
+#         self.transform = transform
+#         self.flip = flip
+#         self.no_diff = no_diff
+#         self.mute = False
+#
+#         self.images = os.listdir(root)
+#         self.parser = xml.sax.make_parser()
+#         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
+#
+#         # Optional: Sort the images by their names
+#         self.images.sort()
+#
+#         if subset:
+#             self.images = self.images[:subset]
+
+    def __init__(self, root, split, transform=None, flip=True, no_diff=True, subset=0):
+        self.root = os.path.join(root, 'JPEGImages')
+        self.ann = os.path.join(root, 'Annotations')
+        self.split = split
         self.transform = transform
         self.flip = flip
         self.no_diff = no_diff
         self.mute = False
-        
-        self.images = os.listdir(root)
+
+        assert split == 'trainval' or split == 'test'
+        with open(os.path.join(root, 'ImageSets/Main/{}.txt'.format(split)), 'r') as fi:
+            lines = fi.readlines()
+        self.images = ['{}.jpg'.format(pre.rstrip('\n')) for pre in lines]
         self.parser = xml.sax.make_parser()
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
-        # Optional: Sort the images by their names
         self.images.sort()
 
         if subset:
@@ -248,7 +269,7 @@ def transform_image(img, targets, transform, random_flip=True):
 
     if len(targets) == 0:  # maybe there's an image without a target,
         return img, targets  # and for convenient, I just skip it.
-    
+
     # Rescale the bounding box together
     assert ('scale' not in targets[0]), "Processed twice"
 
@@ -304,7 +325,7 @@ def create_anchors(img):
     W, H = w//feature_scale, h//feature_scale
     wscale, hscale = w/W, h/H  # map anchors in the features to the image
     wscale = hscale = feature_scale
-    
+
     anchors = Tensor(4, num_anchors, H, W)
     x = (torch.arange(W, dtype=torch.float32, device=device)*wscale).view(1, 1, 1, -1)
     y = (torch.arange(H, dtype=torch.float32, device=device)*hscale).view(1, 1, -1, 1)
@@ -313,7 +334,7 @@ def create_anchors(img):
         anchors[1,i] = y - size[1]/2 + feature_scale/2
         anchors[2,i] = size[0]
         anchors[3,i] = size[1]
-    
+
     return anchors
 
 
@@ -336,11 +357,11 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     N = anchors.shape[1]
     # Ignore all cross-boundary anchors so they do not contribute to the loss
     allowed_border = 0.5
-    inds_inside = np.where(
+    inds_inside = np.where((
         (anchors[0] >= -allowed_border)
       & (anchors[1] >= -allowed_border)
       & (anchors[0] + anchors[2] <= img.shape[3]+allowed_border)
-      & (anchors[1] + anchors[3] <= img.shape[2]+allowed_border)
+      & (anchors[1] + anchors[3] <= img.shape[2]+allowed_border)).cpu()
     )[0]
     anchors = anchors[:, inds_inside]
 
@@ -355,24 +376,24 @@ def sample_anchors(img, targets, num_p=128, num_t=256):
     max_IoUs = IoUs[torch.arange(anchors.shape[1]), argmax_IoUs]
 
     # Find negative samples first so that positive ones can clobber them
-    labels[np.where(max_IoUs < 0.3)[0]] = 0
+    labels[np.where((max_IoUs < 0.3).cpu())[0]] = 0
 
     # Find the anchor as a positive sample with the highest IoU with a gt box
     argmax_gts = torch.argmax(IoUs, dim=0)
     max_gts = IoUs[argmax_gts, torch.arange(bboxes.shape[1])]
-    argmax_gts = np.where(IoUs == max_gts)[0]
+    argmax_gts = np.where((IoUs == max_gts).cpu())[0]
     labels[argmax_gts] = 1
 
     # Find other positive samples
-    labels[np.where(max_IoUs >= 0.7)[0]] = 1
+    labels[np.where((max_IoUs >= 0.7).cpu())[0]] = 1
 
     # Subsample if we have too many
-    inds_p = np.where(labels == 1)[0]
+    inds_p = np.where((labels == 1).cpu())[0]
     if len(inds_p) > num_p:
         labels[inds_p] = -1
         labels[np.random.choice(inds_p, num_p, replace=False)] = 1
     num_n = num_t - min(len(inds_p), num_p)
-    inds_n = np.where(labels == 0)[0]
+    inds_n = np.where((labels == 0).cpu())[0]
     if len(inds_n) > num_n:
         labels[inds_n] = -1
         labels[np.random.choice(inds_n, num_n, replace=False)] = 0
@@ -439,21 +460,21 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
 
     # 1. Generate proposals from bbox deltas and shifted anchors
     anchors = create_anchors(img).view(4, -1)
-    
+
     scores = nn.functional.softmax(y_cls.squeeze().view(2, -1), dim=0)
 
     # ! Note the correspondence of y_reg and anchors
     coords = inv_parameterize(y_reg.squeeze().view(4, -1),
                               anchors)  # corrected coords of anchors, back to input scale
     del anchors  # release memory
-    
+
     # 2. clip predicted boxes to image
     coords = clip_box(coords, img.shape[3], img.shape[2])
-    
+
     # 3. remove predicted boxes with either height or width < threshold
     coords, scores = filter_boxes(coords, int(feature_scale*im_scale),
                                   coords, scores)
-    
+
     # 4. sort all (proposal, score) pairs by score from highest to lowest
     # 5. take top pre_nms_topN (e.g. 6000)
     # 6. apply nms (e.g. threshold = 0.7)
@@ -461,7 +482,7 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     # 8. return the top proposals (-> RoIs top)
     # All done by this non-maximum suppression
     coords = NMS(coords, scores, pre_nms_num, post_nms_num)
-    
+
     return coords
 
 
@@ -470,11 +491,11 @@ def sample_proposals(proposals, targets, num_samples=128):
     Take 25% of the RoIs from object proposals that have IoU overlap with a
     ground-truth bounding box of at least 0.5.
     (foreground object classes, u>=1)
-    
+
     The remaining RoIs are sampled from the object proposals that have a
     maximum IoU with ground truth in the interval [0.1, 0.5).
     (the background class, u=0)
-    
+
     Inputs:
         - proposals: List of proposals made by `create_proposals`
           scale as the input
@@ -488,25 +509,25 @@ def sample_proposals(proposals, targets, num_samples=128):
     """
     num_fg_total = num_samples//4  # 25% foreground classes samples
     num_bg_total = num_samples-num_fg_total
-    
+
     # Compute IoU
     bboxes = Tensor([target['bbox'] for target in targets]).t()
     labels = LongTensor([target['class_idx'] for target in targets])
     proposals = torch.cat((proposals, bboxes), dim=1)  # append gt boxes to avoid zero sample
     IoUs = IoU(proposals, bboxes)
     max_IoUs, argmax_IoUs = torch.max(IoUs, dim=1)  # Max IoU for each proposal
-    
+
     # Choose samples' indices
-    inds_fg = np.where(max_IoUs >= 0.5)[0]
+    inds_fg = np.where((max_IoUs >= 0.5).cpu())[0]
     if len(inds_fg) > num_fg_total:
         inds_fg = np.random.choice(inds_fg, num_fg_total, replace=False)
     else:
         num_fg_total = len(inds_fg)
-    inds_bg = np.where((max_IoUs < 0.5) & (max_IoUs >= 0.1))[0]
+    inds_bg = np.where(((max_IoUs < 0.5) & (max_IoUs >= 0.1)).cpu)[0]
     num_bg_total = num_samples - num_fg_total
     if len(inds_bg) > num_bg_total:
         inds_bg = np.random.choice(inds_bg, num_bg_total, replace=False)
-        
+
     # Compute targets
     inds_all = np.append(inds_fg, inds_bg)
     samples = proposals[:, inds_all]
@@ -520,5 +541,5 @@ def sample_proposals(proposals, targets, num_samples=128):
 
     # print('{} / {} proposal samples'.
     #       format(min(len(inds_fg), num_fg_total), min(len(inds_bg), num_bg_total)))
-    
+
     return samples, gt_coords, gt_labels, num_fg_total

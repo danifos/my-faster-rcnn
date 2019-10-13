@@ -47,7 +47,7 @@ class RoIPooling(nn.Module):
             - ret: Tensor of size NxCx7x7
         """
         N = rois.shape[0]
-        
+
         # Rescale rois (from h,w scale (input scale) to H,W scale (feature scale))
         w, h = img.shape[3], img.shape[2]
         W, H = x.shape[3], x.shape[2]
@@ -57,14 +57,14 @@ class RoIPooling(nn.Module):
         roi_w = (rois[:,2]*wscale).long()
         roi_h = (rois[:,3]*hscale).long()
         # Note that wscale and hscale are different from those in sampler.py
-        
+
         # Apply adaptive max pooling to every RoI respectively
         x = x.squeeze()
         ret = [None]*N
         for i in range(N):
             rx, ry, rw, rh = roi_x[i], roi_y[i], roi_w[i], roi_h[i]
             ret[i] = self.pool(x[:, ry:ry+rh+1, rx:rx+rw+1])
-        
+
         return torch.stack(ret, dim=0)
 
 
@@ -273,7 +273,7 @@ class FasterRCNN(nn.Module):
         lst = []  # list of predicted dict {bbox, confidence, class_idx}
         for i in range(N):
             confidence = torch.max(roi_scores[i])
-            idx = np.where(roi_scores[i] == confidence)[0][0]
+            idx = np.where((roi_scores[i] == confidence).cpu())[0][0]
             if idx != 0:  # ignore background class
                 bbox = roi_coords[:, i, idx]
                 lst.append({'bbox': bbox.detach().cpu().numpy(),

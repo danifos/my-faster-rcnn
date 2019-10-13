@@ -10,6 +10,7 @@ import torch
 import torchvision.transforms as T
 import numpy as np
 import random
+import os
 import os.path as osp
 
 
@@ -30,7 +31,7 @@ for ratio in anchor_ratios:
         height = (area/ratio)**0.5
         anchor_sizes.append((int(height*ratio), int(height)))
 num_anchors = len(anchor_sizes)
-        
+
 
 # %% Information about the pre-trained CNN
 
@@ -93,6 +94,7 @@ voc_train_data_dir = '/home/user/VOC2007/Train/JPEGImages'
 voc_train_ann_dir = '/home/user/VOC2007/Train/Annotations'
 voc_test_data_dir = '/home/user/VOC2007/Test/JPEGImages'
 voc_test_ann_dir = '/home/user/VOC2007/Test/Annotations'
+voc_root = osp.join(os.environ['HOME'], 'VOC2007')
 
 voc_names = ('', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
              'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
@@ -121,7 +123,7 @@ bbox_normalize_stds = Tensor((0.1, 0.1, 0.2, 0.2))
 
 # %% User settings
 
-low_memory = True  # Save GPU memory in a local machine
+low_memory = False  # Save GPU memory in a local machine
 
 rng_seed = 3  # for reproducibility
 random.seed(rng_seed)

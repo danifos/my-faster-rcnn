@@ -13,11 +13,11 @@ import torchvision.transforms as T
 import cv2 as cv
 from PIL import Image
 
-from .lib.utility import _IoU, process_bar
-from .lib.sampler import scale_image
-from .lib.utility import results_to_raw
-from .lib.consts import Tensor, transform, inv_transform
-from .lib.consts import num_classes, dtype, device, voc_names
+from lib.utility import _IoU, process_bar
+from lib.sampler import scale_image
+from lib.utility import results_to_raw
+from lib.consts import Tensor, transform, inv_transform
+from lib.consts import num_classes, dtype, device, voc_names
 
 
 def predict_raw(model, image, cnn_only=False):
@@ -120,7 +120,7 @@ def evaluate(model, loader, total_batches=0, check_every=0,
              verbose=False, show_ap=False, use_batch=False):
     """
     Check mAP of a dataset.
-    
+
     Inputs:
         - model: The Faster R-CNN model
         - loader: Instance of torch.utils.data.DataLoader

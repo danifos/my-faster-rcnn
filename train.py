@@ -18,7 +18,8 @@ from lib.sampler import CocoDetection, VOCDetection, data_loader
 from lib.faster_r_cnn import FasterRCNN
 from lib.consts import dtype, device
 # from consts import coco_train_data_dir, coco_train_ann_dir, coco_val_data_dir, coco_val_ann_dir
-from lib.consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir, result_dir
+# from lib.consts import voc_train_data_dir, voc_train_ann_dir, voc_test_data_dir, voc_test_ann_dir, result_dir
+from lib.consts import voc_root, result_dir
 from lib.consts import transform
 from test import evaluate
 from plot import plot_summary
@@ -45,10 +46,12 @@ pretty = False
 
 #coco_train = CocoDetection(root=coco_train_data_dir, ann=train_ann_dir, transform=transform)
 #coco_val = CocoDetection(root=coco_val_data_dir, ann=val_ann_dir, transform=transform)
-voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir,
-                         transform=transform)
-voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
-                        transform=transform, flip=False)
+# voc_train = VOCDetection(root=voc_train_data_dir, ann=voc_train_ann_dir,
+#                          transform=transform)
+# voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
+#                         transform=transform, flip=False)
+voc_train = VOCDetection(root=voc_root, split='trainval', transform=transform)
+voc_test = VOCDetection(root=voc_root, split='test', transform=transform, flip=False)
 
 
 # %% Data loders
@@ -76,9 +79,9 @@ def init(load_model=True):
             except:
                 print('summary.pkl not found in existing logdir')
             files_dic = search_files(files)
-                
+
             break
-            
+
     else:  # there's not, make one
         os.mkdir(os.path.join(result_dir, logdir))
 
