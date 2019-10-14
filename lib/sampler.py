@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
+from torchvision.ops import nms
 from PIL import Image
 
 from .utility import IoU, parameterize, inv_parameterize, clip_box, filter_boxes, NMS
@@ -481,7 +482,19 @@ def create_proposals(y_cls, y_reg, img, im_scale, training=False):
     # 7. take after_nms_topN (e.g. 300)
     # 8. return the top proposals (-> RoIs top)
     # All done by this non-maximum suppression
-    coords = NMS(coords, scores, pre_nms_num, post_nms_num)
+    # coords = NMS(coords, scores, pre_nms_num, post_nms_num)
+
+    # Use torchvision.ops.nms instead of utility.NMS
+
+    scores = scores[1, :]
+    _, indices = torch.sort(scores, descending=True)  # sort the p-scores
+    indices = indices[:pre_nms_num]
+    coords = coords[:, indices]
+    coords_c = coords.clone()
+    coords_c[2:] += coords_c[:2]
+    indices = nms(coords_c.t(), scores[indices], 0.7)
+    indices = indices[:post_nms_num]
+    coords = coords[:, indices]
 
     return coords
 
@@ -523,7 +536,7 @@ def sample_proposals(proposals, targets, num_samples=128):
         inds_fg = np.random.choice(inds_fg, num_fg_total, replace=False)
     else:
         num_fg_total = len(inds_fg)
-    inds_bg = np.where(((max_IoUs < 0.5) & (max_IoUs >= 0.1)).cpu)[0]
+    inds_bg = np.where(((max_IoUs < 0.5) & (max_IoUs >= 0.1)).cpu())[0]
     num_bg_total = num_samples - num_fg_total
     if len(inds_bg) > num_bg_total:
         inds_bg = np.random.choice(inds_bg, num_bg_total, replace=False)

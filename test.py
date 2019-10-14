@@ -341,9 +341,10 @@ def init(logdir, test_set, use_batch):
     train.init()
     if test_set:
         from lib.sampler import VOCDetection, data_loader, batch_data_loader
-        from lib.consts import voc_test_data_dir, voc_test_ann_dir, transform
+        # from lib.consts import voc_test_data_dir, voc_test_ann_dir, transform
+        from lib.consts import voc_root, transform
         from lib.consts import low_memory
-        voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
+        voc_test = VOCDetection(root=voc_root, split='test',
                                 transform=transform, flip=False, no_diff=False)
         voc_test.mute = True
         if use_batch:
