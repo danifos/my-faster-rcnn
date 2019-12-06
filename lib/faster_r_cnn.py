@@ -18,6 +18,7 @@ from .utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
 from .consts import bbox_normalize_stds, bbox_normalize_means
 from .consts import num_classes, num_anchors, device
 from .consts import use_caffe, caffe_model
+from .consts import Tensor, LongTensor
 from .roi_pooling.simple_faster_rcnn_pytorch.roi_module import RoIPooling2D
 
 
@@ -310,3 +311,115 @@ class FasterRCNN(nn.Module):
         state_dict = {'model': self.state_dict(),
                       'optimizer': self.optimizer.state_dict()}
         torch.save(state_dict, filename)
+
+
+class FasterRCNNHead(FasterRCNN):
+    def __init__(self, params):
+        """
+        Inputs:
+            - params: Dictionary of {component : filename} to load state dict
+            - pretrained: Use pretrained VGG16? (False by default)
+              (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
+        """
+        super(FasterRCNN, self).__init__()
+        if not params:
+            if use_caffe:
+                VGG = torchvision.models.vgg16(False)
+                VGG.load_state_dict(torch.load(caffe_model))
+                print('Loaded caffe vgg16 from {}'.format(caffe_model))
+            else:
+                VGG = torchvision.models.vgg16(True)
+                print('Loaded torchvision vgg16')
+        else:
+            VGG = torchvision.models.vgg16(False)
+        # Freeze the first 4 conv layers
+        for p in list(VGG.features.parameters())[:8]:
+            p.requires_grad = False
+
+        # The features of vgg16, with no max pooling at the end
+        self.CNN = nn.Sequential(*list(VGG.features.children())[:-1])
+        # The region proposal network
+        # self.RPN = RegionProposalNetwork()
+        # 2 fc layers of 4096 as the head of Fast R-CNN
+        self.RCNN = FastRCNN(
+            nn.Sequential(*list(VGG.classifier.children())[:-1]))
+
+        self.load_optimizer = False
+        self.optimizer = None
+        if params:
+            # Load parameters
+            state_dict = torch.load(params)
+            if 'optimizer' in state_dict:
+                self.load_state_dict(state_dict['model'])
+                self.load_optimizer = state_dict['optimizer']
+                print('Loaded model and optimizer from checkpoint')
+            else:
+                self.load_state_dict(state_dict)
+                print('Warning: Loaded pre-trained model, no optimizer')
+        else:
+            # And randomize the parameters otherwise
+            for child in (self.RPN, self.RCNN):
+                child.weight_init()
+            print('Initialized model randomly')
+
+    def forward(self, a, x, y=None):
+        training = True if y else False
+
+        features = self.CNN(x)  # extract features from x
+
+        # Get 1x(2*A)xHxW classification scores,
+        # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
+        RPN_cls, RPN_reg = self.RPN(features)
+
+        # Different for training and testing
+        if training:
+            return self.train_RCNN(x, y, a, features, RPN_cls, RPN_reg)
+        else:
+            return self.test_RCNN(x, a, features, RPN_cls, RPN_reg)
+
+    def train_RCNN(self, x, y, a, features, RPN_cls, RPN_reg):
+        proposal_samples = Tensor([y['bbox']]) + \
+                torch.randn((1, 4), dtype=torch.float32, device=device) * \
+                torch.Tensor([[50, 50, 100, 100]])
+        gt_coords = Tensor([y['bbox']])
+        gt_labels = LongTensor([y['class_idx']])
+        # Get Nx81 classification scores
+        # and Nx324 regression coordinates of Fast R-CNN
+        RCNN_cls, RCNN_reg = self.RCNN(features, x, proposal_samples)
+        # Compute RoI loss, has in-place error if do not use detach()
+        roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
+
+        loss = roi_loss
+        summary = {'anchor_samples': nas,
+                   'proposal_samples': 0,
+                   'losses': {'rpn_cls': 0, 'rpn_reg': 0,
+                              'roi_cls': roi_cls, 'roi_reg': roi_reg}}
+        return loss, summary
+
+    def test_RCNN(self, x, a, features, RPN_cls, RPN_reg):
+        h, w = x.shape[2:]
+        proposals = Tensor([[w/3, h/3, w/3, h/3]])
+
+        RCNN_cls, RCNN_reg = self.RCNN(features, x, proposals.t())
+        N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
+        roi_scores = nn.functional.softmax(RCNN_cls, dim=1)
+        roi_coords = RCNN_reg.view(N, M, 4).permute(2, 0, 1)
+        roi_coords = roi_coords * bbox_normalize_stds.view(4, 1, 1) \
+                     + bbox_normalize_means.view(4, 1, 1)
+
+        proposals = proposals.unsqueeze(2).expand_as(roi_coords)
+        roi_coords = inv_parameterize(roi_coords, proposals)
+
+        roi_coords = roi_coords.cpu()  # move to cpu, for computation with targets
+        lst = []  # list of predicted dict {bbox, confidence, class_idx}
+        for i in range(N):
+            confidence = torch.max(roi_scores[i])
+            idx = np.where((roi_scores[i] == confidence).cpu())[0][0]
+            if idx != 0:  # ignore background class
+                bbox = roi_coords[:, i, idx]
+                lst.append({'bbox': bbox.detach().cpu().numpy(),
+                            'confidence': confidence.item(),
+                            'class_idx': idx})
+
+        results = _NMS(lst)
+        return results
