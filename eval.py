@@ -13,7 +13,8 @@ import argparse
 from time import time
 
 from lib.sampler import VOCDetection, data_loader, batch_data_loader
-from lib.consts import voc_test_data_dir, voc_test_ann_dir
+# from lib.consts import voc_test_data_dir, voc_test_ann_dir
+from lib.consts import voc_root
 from lib.consts import transform, voc_names, low_memory
 import train
 from test import predict, predict_batch
@@ -24,7 +25,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--logdir', type=str, default='result')
 parser.add_argument(
     '--savedir', type=str,
-    default='/home/user/workspace/VOCdevkit/VOCcode/results/VOC2007/Main'
+    default=os.path.join(os.environ['HOME'],
+        'workspace/VOCdevkit/VOCcode/results/VOC2007/Main')
 )
 parser.add_argument('-b', '--use_batch',
                     action='store_true', default=False)
@@ -56,10 +58,10 @@ def append_result(image_id, class_idx, bbox, confidence):
 
 
 def main():
-    
+
     # %% Setup
 
-    voc_test = VOCDetection(root=voc_test_data_dir, ann=voc_test_ann_dir,
+    voc_test = VOCDetection(root=voc_root, split='test',
                             transform=transform, flip=False)
     voc_test.mute = True
     if use_batch:
@@ -84,9 +86,9 @@ def main():
                 os._exit(0)
 
     open_files()
-    
+
     # %% Generate .txt results on Pascal VOC 2007
-    
+
     tic = time()
 
     if use_batch:
