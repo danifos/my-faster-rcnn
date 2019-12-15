@@ -104,6 +104,8 @@ for i, name in enumerate(voc_names):
     if i != 0:
         name2idx[name] = i
 
+use_fast_rcnn_head = False
+
 
 # %% Basic data types
 

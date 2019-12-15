@@ -14,11 +14,11 @@ import torch.optim as optim
 import torchvision
 
 from .sampler import create_proposals, sample_anchors, sample_proposals
-from .utility import inv_parameterize, _NMS, RPN_loss, RoI_loss
+from .utility import parameterize, inv_parameterize, _NMS, RPN_loss, RoI_loss
 from .consts import bbox_normalize_stds, bbox_normalize_means
 from .consts import num_classes, num_anchors, device
 from .consts import use_caffe, caffe_model
-from .consts import Tensor, LongTensor
+from .consts import Tensor, LongTensor, use_fast_rcnn_head
 from .roi_pooling.simple_faster_rcnn_pytorch.roi_module import RoIPooling2D
 
 
@@ -313,7 +313,7 @@ class FasterRCNN(nn.Module):
         torch.save(state_dict, filename)
 
 
-class FasterRCNNHead(FasterRCNN):
+class FasterRCNNHead(nn.Module):
     def __init__(self, params):
         """
         Inputs:
@@ -321,7 +321,7 @@ class FasterRCNNHead(FasterRCNN):
             - pretrained: Use pretrained VGG16? (False by default)
               (pre-trained VGG16 are both for the feature and the Fast R-CNN head)
         """
-        super(FasterRCNN, self).__init__()
+        super(FasterRCNNHead, self).__init__()
         if not params:
             if use_caffe:
                 VGG = torchvision.models.vgg16(False)
@@ -332,9 +332,9 @@ class FasterRCNNHead(FasterRCNN):
                 print('Loaded torchvision vgg16')
         else:
             VGG = torchvision.models.vgg16(False)
-        # Freeze the first 4 conv layers
-        for p in list(VGG.features.parameters())[:8]:
-            p.requires_grad = False
+        # DO NOT Freeze the first 4 conv layers
+        # for p in list(VGG.features.parameters())[:8]:
+        #     p.requires_grad = False
 
         # The features of vgg16, with no max pooling at the end
         self.CNN = nn.Sequential(*list(VGG.features.children())[:-1])
@@ -358,8 +358,7 @@ class FasterRCNNHead(FasterRCNN):
                 print('Warning: Loaded pre-trained model, no optimizer')
         else:
             # And randomize the parameters otherwise
-            for child in (self.RPN, self.RCNN):
-                child.weight_init()
+            self.RCNN.weight_init()
             print('Initialized model randomly')
 
     def forward(self, a, x, y=None):
@@ -369,19 +368,19 @@ class FasterRCNNHead(FasterRCNN):
 
         # Get 1x(2*A)xHxW classification scores,
         # and 1x(4*A)xHxW regression coordinates (t_x, t_y, t_w, t_h) of RPN
-        RPN_cls, RPN_reg = self.RPN(features)
 
         # Different for training and testing
         if training:
-            return self.train_RCNN(x, y, a, features, RPN_cls, RPN_reg)
+            return self.train_RCNN(x, y, a, features)
         else:
-            return self.test_RCNN(x, a, features, RPN_cls, RPN_reg)
+            return self.test_RCNN(x, a, features)
 
-    def train_RCNN(self, x, y, a, features, RPN_cls, RPN_reg):
-        proposal_samples = Tensor([y['bbox']]) + \
-                torch.randn((1, 4), dtype=torch.float32, device=device) * \
-                torch.Tensor([[50, 50, 100, 100]])
-        gt_coords = Tensor([y['bbox']])
+    def train_RCNN(self, x, y, a, features):
+        y = y[0]
+        proposal_samples = Tensor([y['bbox']]) \
+                + torch.randn((1, 4), dtype=torch.float32, device=device) \
+                * Tensor([[20, 20, 40, 40]])
+        gt_coords = parameterize(Tensor([y['bbox']]).t(),  proposal_samples.t()).t()
         gt_labels = LongTensor([y['class_idx']])
         # Get Nx81 classification scores
         # and Nx324 regression coordinates of Fast R-CNN
@@ -390,15 +389,15 @@ class FasterRCNNHead(FasterRCNN):
         roi_loss, (roi_cls, roi_reg) = RoI_loss(RCNN_cls, gt_labels, RCNN_reg, gt_coords.detach())
 
         loss = roi_loss
-        summary = {'anchor_samples': nas,
+        summary = {'anchor_samples': 0,
                    'proposal_samples': 0,
                    'losses': {'rpn_cls': 0, 'rpn_reg': 0,
                               'roi_cls': roi_cls, 'roi_reg': roi_reg}}
         return loss, summary
 
-    def test_RCNN(self, x, a, features, RPN_cls, RPN_reg):
+    def test_RCNN(self, x, a, features):
         h, w = x.shape[2:]
-        proposals = Tensor([[w/3, h/3, w/3, h/3]])
+        proposals = Tensor([[w/3, h/3, w/3, h/3]]).t()
 
         RCNN_cls, RCNN_reg = self.RCNN(features, x, proposals.t())
         N, M = RCNN_reg.shape[0], RCNN_cls.shape[1]
@@ -423,3 +422,35 @@ class FasterRCNNHead(FasterRCNN):
 
         results = _NMS(lst)
         return results
+
+    def get_optimizer(self, learning_rate, weight_decay):
+        params = []
+        for name, param in dict(self.named_parameters()).items():
+            if param.requires_grad:
+                if 'bias' in name:
+                    params.append({'params': [param],
+                                   'lr': learning_rate*2,
+                                   'weight_decay': 0})
+                else:
+                    params.append({'params': [param],
+                                   'lr': learning_rate,
+                                   'weight_decay': weight_decay})
+        self.optimizer = optim.SGD(params, momentum=0.9)
+        if self.load_optimizer:
+            self.optimizer.load_state_dict(self.load_optimizer)
+            self.load_optimizer = None
+        return self.optimizer
+
+    def lr_decay(self, decay=10):
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] /= decay
+        return self.optimizer
+
+    def save(self, filename):
+        state_dict = {'model': self.state_dict(),
+                      'optimizer': self.optimizer.state_dict()}
+        torch.save(state_dict, filename)
+
+
+if use_fast_rcnn_head:
+    FasterRCNN = FasterRCNNHead

@@ -97,15 +97,18 @@ class XMLHandler(xml.sax.ContentHandler):
     def endElement(self, tag):
         self.depth -= 1
 
-        if self.no_diff and tag == 'bndbox' and self.depth == 2:
-            if self.targets[-1]['difficult'] == 1:
+        if tag == 'bndbox' and self.depth == 2:
+            if self.no_diff and self.targets[-1]['difficult'] == 1:
+                self.targets.pop()
+            elif self.targets[-1]['class_idx'] is None:
                 self.targets.pop()
 
         self.cur = ''
 
     def characters(self, cnt):
         if self.cur == 'name':
-            self.targets[-1]['class_idx'] = name2idx[cnt]
+            self.targets[-1]['class_idx'] = name2idx[cnt] if cnt in name2idx else None
+            self.targets[-1]['difficult'] = 0
         elif self.cur in ('xmin', 'ymin', 'xmax', 'ymax') and self.depth == 4:
             self.targets[-1]['bbox'].append(eval(cnt))
         elif self.cur == 'difficult':
@@ -182,7 +185,7 @@ class VOCDetection(Dataset):
         img = Image.open(os.path.join(self.root, path)).convert('RGB')
         shape = (img.width, img.height)
         img, targets = transform_image(img, targets, self.transform, self.flip)
-        info = {'shape': shape, 'scale': targets[0]['scale'], 'image_id': pre}
+        info = {'shape': shape, 'scale': targets[0]['scale'] if len(targets) else None, 'image_id': pre}
 
         return img, targets, info
 
